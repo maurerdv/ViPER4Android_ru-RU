@@ -288,10 +288,10 @@ class ViperService : LifecycleService() {
             ViperParamsSerializer.toByteArray(state),
         )
         if (state.ddc.enable && state.ddc.device.isNotEmpty()) {
-            applyDdcDeviceAidl(state.ddc.device)
+            applyDdcDevice(state.ddc.device)
         }
         if (state.convolver.enable && state.convolver.kernelFile.isNotEmpty()) {
-            applyConvolverKernelAidl(state.convolver.kernelFile)
+            applyConvolverKernel(state.convolver.kernelFile)
         }
     }
 
@@ -302,10 +302,10 @@ class ViperService : LifecycleService() {
     ) {
         ViperDispatcher.dispatchFullState(effect, state, masterEnabled)
         if (state.ddc.enable && state.ddc.device.isNotEmpty()) {
-            applyDdcDeviceHidl(state.ddc.device, effect)
+            applyDdcDevice(state.ddc.device, effect = effect)
         }
         if (state.convolver.enable && state.convolver.kernelFile.isNotEmpty()) {
-            applyConvolverKernelHidl(state.convolver.kernelFile, effect)
+            applyConvolverKernel(state.convolver.kernelFile, effect = effect)
         }
     }
 
@@ -537,58 +537,12 @@ class ViperService : LifecycleService() {
         }
     }
 
-    fun applyConvolverKernelAidl(
+    fun applyConvolverKernel(
         fileName: String,
         force: Boolean = false,
-    ) {
-        if (fileName == lastBulkConvolverKey && !force) return
-        if (fileName.isEmpty()) {
-            ViperControlClient.dispatchParam(ViperParams.PARAM_CONVOLVER_PREPARE_BUFFER, 0, 0, 1)
-            lastBulkConvolverKey = null
-            return
-        }
-        applyConvolverKernelHidl(fileName, effect = null)
-        lastBulkConvolverKey = fileName
-    }
-
-    fun applyDdcDeviceAidl(
-        name: String,
-        force: Boolean = false,
-    ) {
-        if (name == lastBulkDdcKey && !force) return
-        val ddcDir = File(getExternalFilesDir(null), "DDC")
-        val file = File(ddcDir, "$name.vdc")
-        if (name.isEmpty()) {
-            ViperControlClient.resetDdc()
-            lastBulkDdcKey = null
-            return
-        }
-        if (!file.exists()) {
-            FileLogger.w("Service", "DDC file missing: $name")
-            return
-        }
-        val parsed = parseVdc(file) ?: return
-        val sec44100 = parsed.first
-        val sec48000 = parsed.second
-        val perRateSize = sec44100.sumOf { it.size }
-        val flat = FloatArray(perRateSize * 2)
-        var off = 0
-        for (sec in sec44100) {
-            System.arraycopy(sec, 0, flat, off, sec.size)
-            off += sec.size
-        }
-        for (sec in sec48000) {
-            System.arraycopy(sec, 0, flat, off, sec.size)
-            off += sec.size
-        }
-        ViperControlClient.setDdc(perRateSize, flat)
-        lastBulkDdcKey = name
-    }
-
-    fun applyConvolverKernelHidl(
-        fileName: String,
         effect: ViperEffect? = null,
     ) {
+        if (fileName == lastBulkConvolverKey && !force) return
         val sendInts: (Int, Int, Int, Int) -> Unit =
             if (effect != null) {
                 { p, a, b, c -> effect.setParameter(p, a, b, c) }
@@ -603,6 +557,7 @@ class ViperService : LifecycleService() {
             }
         if (fileName.isEmpty()) {
             sendInts(ViperParams.PARAM_CONVOLVER_PREPARE_BUFFER, 0, 0, 1)
+            lastBulkConvolverKey = null
             return
         }
         val src = File(File(getExternalFilesDir(null), "Kernel"), fileName)
@@ -658,23 +613,40 @@ class ViperService : LifecycleService() {
             val kernelId = fileName.hashCode()
             sendInts(ViperParams.PARAM_CONVOLVER_COMMIT_BUFFER, totalFloats, crc, kernelId)
             FileLogger.i("Service", "Kernel streamed: $fileName chunks=$chunkIndex crc=0x${crc.toUInt().toString(16)}")
+            lastBulkConvolverKey = fileName
         } catch (e: Exception) {
             FileLogger.e("Service", "Failed to stream kernel: $fileName", e)
         }
     }
 
-    fun applyDdcDeviceHidl(
+    fun applyDdcDevice(
         name: String,
+        force: Boolean = false,
         effect: ViperEffect? = null,
     ) {
-        if (name.isEmpty()) {
-            val bytes = ByteArray(256)
-            ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).putInt(0)
-            if (effect == null) {
-                dispatchParam(ViperParams.PARAM_DDC_COEFFICIENTS, bytes)
+        if (name == lastBulkDdcKey && !force) return
+        val sendBytes: (Int, ByteArray) -> Unit =
+            if (effect != null) {
+                { p, v -> effect.setParameter(p, v) }
             } else {
-                effect.setParameter(ViperParams.PARAM_DDC_COEFFICIENTS, bytes)
+                { p, v -> dispatchParam(p, v) }
             }
+        if (name.isEmpty()) {
+            val bytes =
+                if (effect != null) {
+                    ByteArray(256).also {
+                        ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putInt(0)
+                    }
+                } else {
+                    ByteBuffer
+                        .allocate(8192)
+                        .order(ByteOrder.LITTLE_ENDIAN)
+                        .putInt(0)
+                        .putInt(0)
+                        .array()
+                }
+            sendBytes(ViperParams.PARAM_DDC_COEFFICIENTS, bytes)
+            lastBulkDdcKey = null
             return
         }
         val file = File(File(getExternalFilesDir(null), "DDC"), "$name.vdc")
@@ -687,32 +659,43 @@ class ViperService : LifecycleService() {
         val sec48000 = parsed.second
         val sectionCount = sec44100.size
         val floatsPerRate = sectionCount * 5
-        val naturalSize = 4 + floatsPerRate * 4 * 2
-        val wireSize =
-            when {
-                naturalSize <= 256 -> {
-                    256
-                }
+        val bytes: ByteArray =
+            if (effect != null) {
+                val naturalSize = 4 + floatsPerRate * 4 * 2
+                val wireSize =
+                    when {
+                        naturalSize <= 256 -> {
+                            256
+                        }
 
-                naturalSize <= 1024 -> {
-                    1024
-                }
+                        naturalSize <= 1024 -> {
+                            1024
+                        }
 
-                else -> {
-                    FileLogger.w("Service", "DDC file too large ($naturalSize bytes; max 1024)")
-                    return
+                        else -> {
+                            FileLogger.w("Service", "DDC file too large ($naturalSize bytes; max 1024)")
+                            return
+                        }
+                    }
+                ByteArray(wireSize).also { arr ->
+                    val buf = ByteBuffer.wrap(arr).order(ByteOrder.LITTLE_ENDIAN)
+                    buf.putInt(floatsPerRate)
+                    for (s in sec44100) for (v in s) buf.putFloat(v)
+                    for (s in sec48000) for (v in s) buf.putFloat(v)
                 }
+            } else {
+                ByteBuffer
+                    .allocate(8192)
+                    .order(ByteOrder.LITTLE_ENDIAN)
+                    .also { buf ->
+                        buf.putInt(0)
+                        buf.putInt(floatsPerRate)
+                        for (s in sec44100) for (v in s) buf.putFloat(v)
+                        for (s in sec48000) for (v in s) buf.putFloat(v)
+                    }.array()
             }
-        val bytes = ByteArray(wireSize)
-        val buf = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        buf.putInt(floatsPerRate)
-        for (s in sec44100) for (v in s) buf.putFloat(v)
-        for (s in sec48000) for (v in s) buf.putFloat(v)
-        if (effect == null) {
-            dispatchParam(ViperParams.PARAM_DDC_COEFFICIENTS, bytes)
-        } else {
-            effect.setParameter(ViperParams.PARAM_DDC_COEFFICIENTS, bytes)
-        }
+        sendBytes(ViperParams.PARAM_DDC_COEFFICIENTS, bytes)
+        lastBulkDdcKey = name
     }
 
     fun getActiveEffect(): ViperEffect? {

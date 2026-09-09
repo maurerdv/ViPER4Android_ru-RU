@@ -187,7 +187,7 @@ object ViperControlClient {
             reply.readException()
             val hasReply = reply.readInt()
             if (hasReply == 0) return null
-            reply.readInt() // inner parcelable size
+            reply.readInt()
             DriverStatus(
                 enabled = reply.readInt() != 0,
                 sampleRate = reply.readInt(),
