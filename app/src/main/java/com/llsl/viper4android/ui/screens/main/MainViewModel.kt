@@ -112,6 +112,7 @@ class MainViewModel
             private const val NOTIFY_ID_VDC_IMPORT = 5
             private const val PROGRESS_NOTIFY_MIN_GAP_MS = 200L
             private const val PROGRESS_DRAIN_DELAY_MS = 250L
+            private const val PERSIST_DEBOUNCE_MS = 300L
         }
 
         val uiState: StateFlow<EffectState>
@@ -222,17 +223,15 @@ class MainViewModel
             }
         }
 
+        private val persistJobs = mutableMapOf<String, Job>()
+
         fun <T> applyPref(
             pref: EffectPref<T>,
             value: T,
             last: Boolean = true,
         ) {
             uiState.update { pref.set(it, value) }
-            viewModelScope.launch {
-                persistPref(pref, value)
-                if (pref.paramId == -1 || !uiState.value.masterEnable || !shouldDispatch(pref)) {
-                    return@launch
-                }
+            if (pref.paramId != -1 && uiState.value.masterEnable && shouldDispatch(pref)) {
                 if (pref is DoubleListPref) {
                     @Suppress("UNCHECKED_CAST")
                     val bytes = pref.toRawArray(value as List<Double>)
@@ -241,6 +240,12 @@ class MainViewModel
                     viperService?.dispatchParam(pref.paramId, pref.toRaw(value), republishAidl = last)
                 }
             }
+            persistJobs[pref.prefKey]?.cancel()
+            persistJobs[pref.prefKey] =
+                viewModelScope.launch(Dispatchers.IO) {
+                    delay(PERSIST_DEBOUNCE_MS.milliseconds)
+                    persistPref(pref, value)
+                }
         }
 
         private fun <E> replaceAt(
