@@ -11,6 +11,7 @@ object ViperParams {
     const val PARAM_GET_ARCHITECTURE = 8
 
     const val PARAM_RESET_ALL_EFFECTS = 0x10101
+    const val PARAM_SET_FULL_PARAMS = 0x10102
 
     const val PARAM_MASTER_LIMITER_THRESHOLD = 0x10110
     const val PARAM_MASTER_LIMITER_OUTPUT_VOLUME = 0x10111

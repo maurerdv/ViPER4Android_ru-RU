@@ -33,6 +33,13 @@ import java.nio.ByteOrder
  * Serialize an EffectState to the byte layout of viper::ViPERParams as defined in ViperParamsLayout.kt.
  */
 object ViperParamsSerializer {
+    fun toByteArray(state: EffectState): ByteArray {
+        val buf =
+            ByteBuffer.allocate(ViperParamsLayout.SIZE).order(ByteOrder.LITTLE_ENDIAN)
+        write(buf, 0, state)
+        return buf.array()
+    }
+
     /**
      * Serialize the entire ViPERParams struct into [buf] starting at [offset].
      */

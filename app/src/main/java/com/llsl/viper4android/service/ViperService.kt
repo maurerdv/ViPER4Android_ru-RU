@@ -22,12 +22,12 @@ import com.llsl.viper4android.effect.EffectState
 import com.llsl.viper4android.effect.deserializeEffectPrefs
 import com.llsl.viper4android.effect.serializeEffectPrefs
 import com.llsl.viper4android.utils.FileLogger
-import com.llsl.viper4android.utils.RootShell
 import com.llsl.viper4android.utils.WavDecoder
-import com.llsl.viper4android.viper.ConfigChannel
+import com.llsl.viper4android.viper.ViperControlClient
 import com.llsl.viper4android.viper.ViperDispatcher
 import com.llsl.viper4android.viper.ViperEffect
 import com.llsl.viper4android.viper.ViperParams
+import com.llsl.viper4android.viper.ViperParamsSerializer
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -90,6 +90,41 @@ class ViperService : LifecycleService() {
 
     @Volatile
     private var excludedApps: Set<String> = emptySet()
+
+    private data class DecodedKernel(
+        val rawBytes: ByteArray,
+        val totalFloats: Int,
+        val channelCount: Int,
+        val crc: Int,
+    ) {
+        override fun equals(other: Any?): Boolean {
+            if (this === other) return true
+            if (javaClass != other?.javaClass) return false
+
+            other as DecodedKernel
+
+            if (totalFloats != other.totalFloats) return false
+            if (channelCount != other.channelCount) return false
+            if (crc != other.crc) return false
+            if (!rawBytes.contentEquals(other.rawBytes)) return false
+
+            return true
+        }
+
+        override fun hashCode(): Int {
+            var result = totalFloats
+            result = 31 * result + channelCount
+            result = 31 * result + crc
+            result = 31 * result + rawBytes.contentHashCode()
+            return result
+        }
+    }
+
+    private val decodedKernelCache =
+        object : LinkedHashMap<String, DecodedKernel>(4, 0.75f, true) {
+            override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, DecodedKernel>?) = size > 3
+        }
+
     private var bootMasterEnabled: Boolean = false
     private val masterEnabled: Boolean
         get() = stateProvider?.invoke()?.masterEnable ?: lastUiState?.masterEnable ?: bootMasterEnabled
@@ -141,6 +176,8 @@ class ViperService : LifecycleService() {
         }
         globalEffect = effect
         FileLogger.i("Service", "Global effect created (aidlType=$useAidlTypeUuid)")
+        lastBulkConvolverKey = null
+        lastBulkDdcKey = null
     }
 
     private fun applyState(
@@ -162,12 +199,12 @@ class ViperService : LifecycleService() {
         } else {
             if (sessionMonitor == null) startSessionMonitor()
         }
-        var shmWritten = false
+        var binderWritten = false
         globalEffect?.let { effect ->
             effect.enabled = true
             if (useAidlTypeUuid) {
-                writeAidlFullState(state)
-                shmWritten = true
+                applyFullStateAidl(state)
+                binderWritten = true
             } else {
                 applyFullStateHidl(effect, state, true)
             }
@@ -176,9 +213,9 @@ class ViperService : LifecycleService() {
             val effect = sessions.valueAt(i)
             effect.enabled = true
             if (useAidlTypeUuid) {
-                if (!shmWritten) {
-                    writeAidlFullState(state)
-                    shmWritten = true
+                if (!binderWritten) {
+                    applyFullStateAidl(state)
+                    binderWritten = true
                 }
             } else {
                 applyFullStateHidl(effect, state, true)
@@ -233,29 +270,23 @@ class ViperService : LifecycleService() {
         applyState(state, masterEnabled)
     }
 
-    private suspend fun dispatchFullStateToEffect(
-        effect: ViperEffect,
-        skipShmWrite: Boolean = false,
-    ) {
+    private suspend fun dispatchFullStateToEffect(effect: ViperEffect) {
         val state = ViperDispatcher.loadFullStateFromPrefs(repository)
         val isMasterOn = masterEnabled
         effect.enabled = isMasterOn
+        lastUiState = state
         if (useAidlTypeUuid) {
-            if (!skipShmWrite) {
-                FileLogger.d(
-                    "Service",
-                    "AIDL shm apply full state (master=$isMasterOn)",
-                )
-                writeAidlFullState(state)
-            }
+            applyFullStateAidl(state)
             return
         }
         applyFullStateHidl(effect, state, isMasterOn)
     }
 
-    private fun writeAidlFullState(state: EffectState) {
-        lastUiState = state
-        ConfigChannel.writeFullState(state)
+    private fun applyFullStateAidl(state: EffectState) {
+        ViperControlClient.dispatchParam(
+            ViperParams.PARAM_SET_FULL_PARAMS,
+            ViperParamsSerializer.toByteArray(state),
+        )
         if (state.ddc.enable && state.ddc.device.isNotEmpty()) {
             applyDdcDeviceAidl(state.ddc.device)
         }
@@ -387,6 +418,8 @@ class ViperService : LifecycleService() {
 
         sessions.put(sessionId, effect)
         FileLogger.i("Service", "Opened session $sessionId for $packageName")
+        lastBulkConvolverKey = null
+        lastBulkDdcKey = null
 
         lifecycleScope.launch {
             dispatchFullStateToEffect(effect)
@@ -414,10 +447,9 @@ class ViperService : LifecycleService() {
     fun dispatchParam(
         param: Int,
         value: Int,
-        republishAidl: Boolean = true,
     ) {
         if (useAidlTypeUuid) {
-            if (republishAidl) republishLastStateOnAidl()
+            ViperControlClient.dispatchParam(param, value)
             return
         }
         globalEffect?.setParameter(param, value)
@@ -431,10 +463,9 @@ class ViperService : LifecycleService() {
         val1: Int,
         val2: Int,
         val3: Int,
-        republishAidl: Boolean = true,
     ) {
         if (useAidlTypeUuid) {
-            if (republishAidl) republishLastStateOnAidl()
+            ViperControlClient.dispatchParam(param, val1, val2, val3)
             return
         }
         globalEffect?.setParameter(param, val1, val2, val3)
@@ -446,26 +477,14 @@ class ViperService : LifecycleService() {
     fun dispatchParam(
         param: Int,
         value: ByteArray,
-        republishAidl: Boolean = true,
     ) {
         if (useAidlTypeUuid) {
-            if (republishAidl) republishLastStateOnAidl()
+            ViperControlClient.dispatchParam(param, value)
             return
         }
         globalEffect?.setParameter(param, value)
         for (i in 0 until sessions.size) {
             sessions.valueAt(i).setParameter(param, value)
-        }
-    }
-
-    private fun republishLastStateOnAidl() {
-        val state = stateProvider?.invoke() ?: lastUiState ?: return
-        ConfigChannel.writeFullState(state)
-        if (state.ddc.enable && state.ddc.device.isNotEmpty()) {
-            applyDdcDeviceAidl(state.ddc.device)
-        }
-        if (state.convolver.enable && state.convolver.kernelFile.isNotEmpty()) {
-            applyConvolverKernelAidl(state.convolver.kernelFile)
         }
     }
 
@@ -524,27 +543,11 @@ class ViperService : LifecycleService() {
     ) {
         if (fileName == lastBulkConvolverKey && !force) return
         if (fileName.isEmpty()) {
-            ConfigChannel.writeBulkConvolverReset()
+            ViperControlClient.dispatchParam(ViperParams.PARAM_CONVOLVER_PREPARE_BUFFER, 0, 0, 1)
             lastBulkConvolverKey = null
             return
         }
-        val kernelDir = File(getExternalFilesDir(null), "Kernel")
-        val src = File(kernelDir, fileName)
-        if (!src.exists()) {
-            FileLogger.w("Service", "Kernel src missing: $fileName")
-            return
-        }
-        val safeName = fileName.replace("'", "")
-        val stagedPath = "/data/local/tmp/v4a/kernel/$safeName"
-        val staged = File(stagedPath)
-        val needCopy = !(staged.exists() && staged.length() == src.length())
-        if (needCopy) {
-            FileLogger.d("Service", "Staging kernel '$fileName' to $stagedPath")
-            RootShell.copyFile(src, stagedPath)
-        } else {
-            FileLogger.d("Service", "Kernel already staged at $stagedPath")
-        }
-        ConfigChannel.writeBulkConvolverPath(stagedPath)
+        applyConvolverKernelHidl(fileName, effect = null)
         lastBulkConvolverKey = fileName
     }
 
@@ -556,7 +559,7 @@ class ViperService : LifecycleService() {
         val ddcDir = File(getExternalFilesDir(null), "DDC")
         val file = File(ddcDir, "$name.vdc")
         if (name.isEmpty()) {
-            ConfigChannel.writeBulkDdcReset()
+            ViperControlClient.resetDdc()
             lastBulkDdcKey = null
             return
         }
@@ -578,7 +581,7 @@ class ViperService : LifecycleService() {
             System.arraycopy(sec, 0, flat, off, sec.size)
             off += sec.size
         }
-        ConfigChannel.writeBulkDdc(perRateSize, flat)
+        ViperControlClient.setDdc(perRateSize, flat)
         lastBulkDdcKey = name
     }
 
@@ -609,21 +612,33 @@ class ViperService : LifecycleService() {
         }
 
         try {
-            val decoded = WavDecoder.decode(src.readBytes())
-            val samples = decoded.samples
-            val totalFloats = samples.size
-            val channelCount = decoded.channels
-            FileLogger.i("Service", "Kernel decoded: $fileName samples=$totalFloats ch=$channelCount")
+            val decoded = decodedKernelCache[src.absolutePath]
+            val rawBytes: ByteArray
+            val totalFloats: Int
+            val channelCount: Int
+            val crc: Int
+            if (decoded != null) {
+                rawBytes = decoded.rawBytes
+                totalFloats = decoded.totalFloats
+                channelCount = decoded.channelCount
+                crc = decoded.crc
+            } else {
+                val d = WavDecoder.decode(src.readBytes())
+                totalFloats = d.samples.size
+                channelCount = d.channels
+                FileLogger.i("Service", "Kernel decoded: $fileName samples=$totalFloats ch=$channelCount")
+                rawBytes =
+                    ByteBuffer
+                        .allocate(totalFloats * 4)
+                        .order(ByteOrder.LITTLE_ENDIAN)
+                        .also { for (f in d.samples) it.putFloat(f) }
+                        .array()
+                crc = CRC32().apply { update(rawBytes) }.value.toInt()
+                decodedKernelCache[src.absolutePath] =
+                    DecodedKernel(rawBytes, totalFloats, channelCount, crc)
+            }
 
             sendInts(ViperParams.PARAM_CONVOLVER_PREPARE_BUFFER, totalFloats, channelCount, 0)
-
-            val rawBytes =
-                ByteBuffer
-                    .allocate(totalFloats * 4)
-                    .order(ByteOrder.LITTLE_ENDIAN)
-                    .also { for (f in samples) it.putFloat(f) }
-                    .array()
-            val crc = CRC32().apply { update(rawBytes) }.value.toInt()
 
             val maxFloatsPerChunk = 2046
             var offset = 0

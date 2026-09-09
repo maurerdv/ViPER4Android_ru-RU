@@ -47,7 +47,7 @@ import com.llsl.viper4android.utils.FileLogger
 import com.llsl.viper4android.utils.ReleaseInfo
 import com.llsl.viper4android.utils.UpdateChecker
 import com.llsl.viper4android.utils.UpdateResult
-import com.llsl.viper4android.viper.ConfigChannel
+import com.llsl.viper4android.viper.ViperControlClient
 import com.llsl.viper4android.viper.ViperEffect
 import com.llsl.viper4android.viper.ViperParams
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -235,9 +235,9 @@ class MainViewModel
                 if (pref is DoubleListPref) {
                     @Suppress("UNCHECKED_CAST")
                     val bytes = pref.toRawArray(value as List<Double>)
-                    viperService?.dispatchParam(pref.paramId, bytes, republishAidl = last)
+                    viperService?.dispatchParam(pref.paramId, bytes)
                 } else if (pref !is IntListPref && pref !is BoolListPref) {
-                    viperService?.dispatchParam(pref.paramId, pref.toRaw(value), republishAidl = last)
+                    viperService?.dispatchParam(pref.paramId, pref.toRaw(value))
                 }
             }
             persistJobs[pref.prefKey]?.cancel()
@@ -271,7 +271,7 @@ class MainViewModel
             val updated = replaceAt(pref.get(uiState.value), band, value, pref.padValue, count)
             applyPref(pref, updated)
             ifMasterOn {
-                viperService?.dispatchParam(pref.paramId, band, pref.elementToRaw(value), 0, republishAidl = last)
+                viperService?.dispatchParam(pref.paramId, band, pref.elementToRaw(value), 0)
             }
         }
 
@@ -1491,20 +1491,24 @@ class MainViewModel
             probe.release()
         }
 
+        private var lastDriverFrames: Long = -1
+
         private fun queryDriverStatusFromFile() {
-            val status = ConfigChannel.readStatus()
+            val status = ViperControlClient.getStatus()
             if (status == null || status.versionCode <= 0) {
                 if (driverStatus.value.installed) return
                 driverStatus.value = DriverStatus(installed = false)
                 return
             }
+            val streaming = lastDriverFrames >= 0 && status.processedFrames != lastDriverFrames
+            lastDriverFrames = status.processedFrames
             driverStatus.value =
                 DriverStatus(
                     installed = true,
                     versionCode = status.versionCode,
                     versionName = status.versionName,
-                    architecture = status.architecture,
-                    streaming = status.streaming,
+                    architecture = status.arch,
+                    streaming = streaming,
                     samplingRate = status.sampleRate,
                 )
         }
