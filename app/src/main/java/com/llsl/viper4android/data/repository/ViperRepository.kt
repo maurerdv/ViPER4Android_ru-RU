@@ -124,6 +124,11 @@ class ViperRepository
             dataStore.edit { it[booleanPreferencesKey(key)] = value }
         }
 
+        suspend fun editPreferences(block: (androidx.datastore.preferences.core.MutablePreferences) -> Unit) {
+            ensureV2Initialized()
+            dataStore.edit(block)
+        }
+
         fun getIntPreference(
             key: String,
             default: Int = 0,

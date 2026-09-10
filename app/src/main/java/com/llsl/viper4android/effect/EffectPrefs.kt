@@ -1,5 +1,8 @@
 package com.llsl.viper4android.effect
 
+import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.llsl.viper4android.data.repository.ViperRepository
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
@@ -251,15 +254,17 @@ suspend fun saveEffectPrefs(
     repository: ViperRepository,
     state: EffectState,
 ) {
-    for (pref in EFFECT_PREFS) {
-        when (pref) {
-            is IntPref -> repository.setIntPreference(pref.prefKey, pref.get(state))
-            is BoolPref -> repository.setBooleanPreference(pref.prefKey, pref.get(state))
-            is StringPref -> repository.setStringPreference(pref.prefKey, pref.get(state))
-            is NullableLongPref -> repository.setIntPreference(pref.prefKey, pref.get(state)?.toInt() ?: -1)
-            is IntListPref -> repository.setStringPreference(pref.prefKey, spJoinInts(pref.get(state)))
-            is BoolListPref -> repository.setStringPreference(pref.prefKey, spJoinBools(pref.get(state)))
-            is DoubleListPref -> repository.setStringPreference(pref.prefKey, spJoinDoubles(pref.get(state)))
+    repository.editPreferences { prefs ->
+        for (pref in EFFECT_PREFS) {
+            when (pref) {
+                is IntPref -> prefs[intPreferencesKey(pref.prefKey)] = pref.get(state)
+                is BoolPref -> prefs[booleanPreferencesKey(pref.prefKey)] = pref.get(state)
+                is StringPref -> prefs[stringPreferencesKey(pref.prefKey)] = pref.get(state)
+                is NullableLongPref -> prefs[intPreferencesKey(pref.prefKey)] = pref.get(state)?.toInt() ?: -1
+                is IntListPref -> prefs[stringPreferencesKey(pref.prefKey)] = spJoinInts(pref.get(state))
+                is BoolListPref -> prefs[stringPreferencesKey(pref.prefKey)] = spJoinBools(pref.get(state))
+                is DoubleListPref -> prefs[stringPreferencesKey(pref.prefKey)] = spJoinDoubles(pref.get(state))
+            }
         }
     }
 }
