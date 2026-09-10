@@ -12,10 +12,15 @@ import com.llsl.viper4android.data.model.DeviceSettings
 import com.llsl.viper4android.data.model.DsPreset
 import com.llsl.viper4android.data.model.EqPreset
 import com.llsl.viper4android.data.model.Preset
+import com.llsl.viper4android.effect.EffectState
+import com.llsl.viper4android.effect.PRESET_SCHEMA_VERSION
+import com.llsl.viper4android.effect.deserializeEffectPrefs
+import com.llsl.viper4android.effect.serializeEffectPrefs
+import org.json.JSONObject
 
 @Database(
     entities = [Preset::class, EqPreset::class, DsPreset::class, DeviceSettings::class],
-    version = 6,
+    version = 7,
     exportSchema = true,
 )
 abstract class ViperDatabase : RoomDatabase() {
@@ -153,6 +158,63 @@ abstract class ViperDatabase : RoomDatabase() {
                             "`index_ds_presets_name_key` " +
                             "ON `ds_presets` (`name_key`)",
                     )
+                }
+            }
+
+        val MIGRATION_6_7 =
+            object : Migration(6, 7) {
+                override fun migrate(db: SupportSQLiteDatabase) {
+                    db.execSQL(
+                        "CREATE TABLE IF NOT EXISTS `ds_presets_new` (" +
+                            "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                            "`name` TEXT NOT NULL, " +
+                            "`name_key` TEXT DEFAULT NULL, " +
+                            "`x_low` INTEGER NOT NULL, " +
+                            "`x_high` INTEGER NOT NULL, " +
+                            "`y_low` INTEGER NOT NULL, " +
+                            "`y_high` INTEGER NOT NULL, " +
+                            "`side_gain_low` REAL NOT NULL, " +
+                            "`side_gain_high` REAL NOT NULL)",
+                    )
+                    db.execSQL(
+                        "INSERT INTO `ds_presets_new` (" +
+                            "`id`, `name`, `name_key`, `x_low`, `x_high`, `y_low`, `y_high`, " +
+                            "`side_gain_low`, `side_gain_high`) " +
+                            "SELECT `id`, `name`, `name_key`, `x_low`, `x_high`, `y_low`, `y_high`, " +
+                            "`side_gain_low` / 100.0, `side_gain_high` / 100.0 FROM `ds_presets`",
+                    )
+                    db.execSQL("DROP TABLE `ds_presets`")
+                    db.execSQL("ALTER TABLE `ds_presets_new` RENAME TO `ds_presets`")
+                    db.execSQL(
+                        "CREATE UNIQUE INDEX IF NOT EXISTS " +
+                            "`index_ds_presets_name_key` " +
+                            "ON `ds_presets` (`name_key`)",
+                    )
+
+                    fun convertRows(
+                        table: String,
+                        idColumn: String,
+                    ) {
+                        val cursor = db.query("SELECT $idColumn, settings_json FROM $table")
+                        val converted = mutableListOf<Pair<String, String>>()
+                        cursor.use {
+                            while (it.moveToNext()) {
+                                val json = JSONObject(it.getString(1))
+                                if (json.optDouble("schemaVersion", 0.0) < PRESET_SCHEMA_VERSION) {
+                                    val state = deserializeEffectPrefs(json, EffectState())
+                                    converted += it.getString(0) to serializeEffectPrefs(state).toString()
+                                }
+                            }
+                        }
+                        for ((id, settingsJson) in converted) {
+                            db.execSQL(
+                                "UPDATE $table SET settings_json = ? WHERE $idColumn = ?",
+                                arrayOf(settingsJson, id),
+                            )
+                        }
+                    }
+                    convertRows("device_settings", "device_id")
+                    convertRows("presets", "id")
                 }
             }
     }
