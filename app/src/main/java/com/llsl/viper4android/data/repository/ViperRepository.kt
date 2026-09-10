@@ -6,6 +6,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.llsl.viper4android.data.dao.DeviceSettingsDao
@@ -144,6 +145,40 @@ class ViperRepository
         ) {
             ensureV2Initialized()
             dataStore.edit { it[intPreferencesKey(key)] = value }
+        }
+
+        fun getFloatPreference(
+            key: String,
+            default: Float = 0.0f,
+        ): Flow<Float> =
+            flow {
+                ensureV2Initialized()
+                emitAll(
+                    dataStore.data.map { prefs ->
+                        when (
+                            val value =
+                                prefs
+                                    .asMap()
+                                    .entries
+                                    .firstOrNull { it.key.name == key }
+                                    ?.value
+                        ) {
+                            is Float -> value
+                            is Int -> value.toFloat()
+                            is Long -> value.toFloat()
+                            is Double -> value.toFloat()
+                            else -> default
+                        }
+                    },
+                )
+            }
+
+        suspend fun setFloatPreference(
+            key: String,
+            value: Float,
+        ) {
+            ensureV2Initialized()
+            dataStore.edit { it[floatPreferencesKey(key)] = value }
         }
 
         fun getStringPreference(

@@ -77,6 +77,13 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.llsl.viper4android.R
 import com.llsl.viper4android.effect.EffectState
 import com.llsl.viper4android.effect.Effects
+import com.llsl.viper4android.effect.compressorAdaptAmountToSeconds
+import com.llsl.viper4android.effect.compressorDbToRaw
+import com.llsl.viper4android.effect.compressorMsToSeconds
+import com.llsl.viper4android.effect.compressorRatioToRaw
+import com.llsl.viper4android.effect.compressorRawToDb
+import com.llsl.viper4android.effect.compressorRawToRatio
+import com.llsl.viper4android.effect.compressorSecondsToMs
 import com.llsl.viper4android.ui.components.ConfirmDialog
 import com.llsl.viper4android.ui.components.EqCurveGraph
 import com.llsl.viper4android.ui.components.EqEditDialog
@@ -110,9 +117,9 @@ private val EffectHeaderVerticalPadding = UiDimens.Large
 private val EffectHelpIconSize = UiDimens.IconLarge
 private val EffectSwitchPlaceholderHeight = UiDimens.SwitchSlotHeight
 
-private fun rawToDb(raw: Number): Double = 20.0 * log10(raw.toDouble() / 100.0)
+private fun scaleToDb(scale: Number): Double = 20.0 * log10(scale.toDouble())
 
-private fun dbToRaw(db: Double): Int = (10.0.pow(db / 20.0) * 100.0).roundToInt()
+private fun dbToScale(db: Double): Float = 10.0.pow(db / 20.0).toFloat()
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
@@ -136,7 +143,10 @@ fun EffectSection(
         modifier =
             modifier
                 .fillMaxWidth()
-                .padding(horizontal = EffectCardHorizontalPadding, vertical = EffectCardVerticalPadding),
+                .padding(
+                    horizontal = EffectCardHorizontalPadding,
+                    vertical = EffectCardVerticalPadding,
+                ),
         colors =
             CardDefaults.cardColors(
                 containerColor = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -165,7 +175,10 @@ fun EffectSection(
                                     },
                                 )
                             },
-                        ).padding(horizontal = EffectHeaderHorizontalPadding, vertical = EffectHeaderVerticalPadding),
+                        ).padding(
+                            horizontal = EffectHeaderHorizontalPadding,
+                            vertical = EffectHeaderVerticalPadding,
+                        ),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (icon != null) {
@@ -204,7 +217,11 @@ fun EffectSection(
                         modifier =
                             Modifier
                                 .fillMaxWidth()
-                                .padding(start = EffectContentPadding, end = EffectContentPadding, bottom = EffectContentPadding),
+                                .padding(
+                                    start = EffectContentPadding,
+                                    end = EffectContentPadding,
+                                    bottom = EffectContentPadding,
+                                ),
                     ) {
                         content()
                     }
@@ -251,10 +268,10 @@ fun MasterLimiterRows(
     val outputVolume = state.out.volume
     val channelPan = state.out.channelPan
     val limiter = state.out.limiter
-    val gainDb = if (outputVolume > 0) rawToDb(outputVolume) else -99.9
-    val limDb = if (limiter > 0) rawToDb(limiter) else -99.9
-    val left = 50 - channelPan / 2
-    val right = 50 + channelPan / 2
+    val gainDb = if (outputVolume > 0) scaleToDb(outputVolume) else -99.9
+    val limDb = if (limiter > 0) scaleToDb(limiter) else -99.9
+    val left = ((1.0f - channelPan) * 50.0f).roundToInt()
+    val right = ((1.0f + channelPan) * 50.0f).roundToInt()
     EffectSection(
         title = stringResource(R.string.section_master_limiter),
         enabled = true,
@@ -266,46 +283,46 @@ fun MasterLimiterRows(
     ) {
         LabeledSlider(
             label = stringResource(R.string.label_output_volume),
-            value = outputVolume.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.masterLimiter.outputVolume, it.roundToInt()) },
-            valueRange = 1f..200f,
-            valueLabel = "${"%.1f".format(gainDb)}dB",
+            value = outputVolume,
+            onValueChange = { viewModel.applyPref(Effects.masterLimiter.outputVolume, it) },
+            valueRange = 0.01f..2.0f,
+            valueLabel = String.format(Locale.US, "%.1f dB", gainDb),
             edit =
                 SliderEdit(
                     displayValue = gainDb,
-                    displayRange = rawToDb(1)..rawToDb(200),
+                    displayRange = scaleToDb(0.01)..scaleToDb(2.0),
                     decimals = 1,
                     unit = "dB",
-                    onCommit = { viewModel.applyPref(Effects.masterLimiter.outputVolume, dbToRaw(it).coerceIn(1, 200)) },
+                    onCommit = { viewModel.applyPref(Effects.masterLimiter.outputVolume, dbToScale(it).coerceIn(0.01f, 2.0f)) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_output_pan),
-            value = channelPan.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.masterLimiter.channelPan, it.roundToInt()) },
-            valueRange = -100f..100f,
+            value = channelPan,
+            onValueChange = { viewModel.applyPref(Effects.masterLimiter.channelPan, it) },
+            valueRange = -1.0f..1.0f,
             valueLabel = "$left:$right",
             edit =
                 SliderEdit(
                     displayValue = channelPan.toDouble(),
-                    displayRange = -100.0..100.0,
-                    decimals = 0,
-                    onCommit = { viewModel.applyPref(Effects.masterLimiter.channelPan, it.roundToInt()) },
+                    displayRange = -1.0..1.0,
+                    decimals = 2,
+                    onCommit = { viewModel.applyPref(Effects.masterLimiter.channelPan, it.toFloat().coerceIn(-1.0f, 1.0f)) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_output_limiter),
-            value = limiter.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.masterLimiter.threshold, it.roundToInt()) },
-            valueRange = 30f..100f,
-            valueLabel = "${"%.1f".format(limDb)}dB",
+            value = limiter,
+            onValueChange = { viewModel.applyPref(Effects.masterLimiter.threshold, it) },
+            valueRange = 0.3f..1.0f,
+            valueLabel = String.format(Locale.US, "%.1f dB", limDb),
             edit =
                 SliderEdit(
                     displayValue = limDb,
-                    displayRange = rawToDb(30)..rawToDb(100),
+                    displayRange = scaleToDb(0.3)..scaleToDb(1.0),
                     decimals = 1,
                     unit = "dB",
-                    onCommit = { viewModel.applyPref(Effects.masterLimiter.threshold, dbToRaw(it).coerceIn(30, 100)) },
+                    onCommit = { viewModel.applyPref(Effects.masterLimiter.threshold, dbToScale(it).coerceIn(0.3f, 1.0f)) },
                 ),
         )
     }
@@ -331,48 +348,48 @@ fun PlaybackGainSection(
     ) {
         LabeledSlider(
             label = stringResource(R.string.label_strength),
-            value = strength.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.playbackGainControl.strength, it.roundToInt()) },
-            valueRange = 50f..300f,
-            valueLabel = "${"%.1f".format(strength / 100.0)}x",
+            value = strength,
+            onValueChange = { viewModel.applyPref(Effects.playbackGainControl.strength, it) },
+            valueRange = 0.5f..3.0f,
+            valueLabel = String.format(Locale.US, "%.1fx", strength),
             edit =
                 SliderEdit(
-                    displayValue = strength / 100.0,
+                    displayValue = strength.toDouble(),
                     displayRange = 0.5..3.0,
                     decimals = 1,
                     unit = "x",
-                    onCommit = { viewModel.applyPref(Effects.playbackGainControl.strength, (it * 100).roundToInt().coerceIn(50, 300)) },
+                    onCommit = { viewModel.applyPref(Effects.playbackGainControl.strength, it.toFloat().coerceIn(0.5f, 3.0f)) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_max_gain),
-            value = maxGain.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.playbackGainControl.maxGain, it.roundToInt()) },
-            valueRange = 100f..1000f,
-            valueLabel = "${"%.1f".format(maxGain / 100.0)}x",
+            value = maxGain,
+            onValueChange = { viewModel.applyPref(Effects.playbackGainControl.maxGain, it) },
+            valueRange = 1.0f..10.0f,
+            valueLabel = String.format(Locale.US, "%.1fx", maxGain),
             edit =
                 SliderEdit(
-                    displayValue = maxGain / 100.0,
+                    displayValue = maxGain.toDouble(),
                     displayRange = 1.0..10.0,
                     decimals = 1,
                     unit = "x",
-                    onCommit = { viewModel.applyPref(Effects.playbackGainControl.maxGain, (it * 100).roundToInt().coerceIn(100, 1000)) },
+                    onCommit = { viewModel.applyPref(Effects.playbackGainControl.maxGain, it.toFloat().coerceIn(1.0f, 10.0f)) },
                 ),
         )
-        val threshDb = if (threshold > 0) rawToDb(threshold) else -99.9
+        val threshDb = if (threshold > 0) scaleToDb(threshold) else -99.9
         LabeledSlider(
             label = stringResource(R.string.label_agc_output_threshold),
-            value = threshold.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.playbackGainControl.outputThreshold, it.roundToInt()) },
-            valueRange = 30f..100f,
-            valueLabel = "${"%.1f".format(threshDb)}dB",
+            value = threshold,
+            onValueChange = { viewModel.applyPref(Effects.playbackGainControl.outputThreshold, it) },
+            valueRange = 0.3f..1.0f,
+            valueLabel = String.format(Locale.US, "%.1f dB", threshDb),
             edit =
                 SliderEdit(
                     displayValue = threshDb,
-                    displayRange = rawToDb(30)..rawToDb(100),
+                    displayRange = scaleToDb(0.3)..scaleToDb(1.0),
                     decimals = 1,
                     unit = "dB",
-                    onCommit = { viewModel.applyPref(Effects.playbackGainControl.outputThreshold, dbToRaw(it).coerceIn(30, 100)) },
+                    onCommit = { viewModel.applyPref(Effects.playbackGainControl.outputThreshold, dbToScale(it).coerceIn(0.3f, 1.0f)) },
                 ),
         )
     }
@@ -405,32 +422,32 @@ fun LUFSTargetingSection(
     ) {
         LabeledSlider(
             label = stringResource(R.string.label_lufs_target_lufs),
-            value = target.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.lufs.target, it.roundToInt()) },
-            valueRange = 80f..240f,
-            valueLabel = String.format(Locale.US, "%.1f LUFS", target / -10f),
+            value = target,
+            onValueChange = { viewModel.applyPref(Effects.lufs.target, it) },
+            valueRange = -24f..-8f,
+            valueLabel = String.format(Locale.US, "%.1f LUFS", target),
             edit =
                 SliderEdit(
-                    displayValue = target / -10.0,
+                    displayValue = target.toDouble(),
                     displayRange = -24.0..-8.0,
                     decimals = 1,
                     unit = "LUFS",
-                    onCommit = { viewModel.applyPref(Effects.lufs.target, (it * -10).roundToInt().coerceIn(80, 240)) },
+                    onCommit = { viewModel.applyPref(Effects.lufs.target, it.toFloat().coerceIn(-24.0f, -8.0f)) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_max_gain),
-            value = maxGain.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.lufs.maxGain, it.roundToInt()) },
-            valueRange = 0f..120f,
-            valueLabel = String.format(Locale.US, "%.1f dB", maxGain / 10f),
+            value = maxGain,
+            onValueChange = { viewModel.applyPref(Effects.lufs.maxGain, it) },
+            valueRange = 0f..12f,
+            valueLabel = String.format(Locale.US, "%.1f dB", maxGain),
             edit =
                 SliderEdit(
-                    displayValue = maxGain / 10.0,
+                    displayValue = maxGain.toDouble(),
                     displayRange = 0.0..12.0,
                     decimals = 1,
                     unit = "dB",
-                    onCommit = { viewModel.applyPref(Effects.lufs.maxGain, (it * 10).roundToInt().coerceIn(0, 120)) },
+                    onCommit = { viewModel.applyPref(Effects.lufs.maxGain, it.toFloat().coerceIn(0.0f, 12.0f)) },
                 ),
         )
         LabeledSlider(
@@ -467,6 +484,15 @@ fun FetCompressorSection(
     val crest = vals.crest
     val adapt = vals.adapt
     val noClip = vals.noClip
+    val thresholdDb = compressorRawToDb(threshold)
+    val ratioDisplay = compressorRawToRatio(ratio)
+    val kneeDb = compressorRawToDb(knee)
+    val gainDb = compressorRawToDb(gain)
+    val attackMs = compressorSecondsToMs(attack)
+    val maxAttackMs = compressorSecondsToMs(maxAttack)
+    val releaseMs = compressorSecondsToMs(release)
+    val maxReleaseMs = compressorSecondsToMs(maxRelease)
+    val crestMs = compressorSecondsToMs(crest)
 
     EffectSection(
         title = stringResource(R.string.section_fet_compressor),
@@ -477,31 +503,41 @@ fun FetCompressorSection(
     ) {
         LabeledSlider(
             label = stringResource(R.string.label_threshold),
-            value = threshold.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.fetCompressor.threshold, it.roundToInt()) },
+            value = thresholdDb,
+            onValueChange = { viewModel.applyPref(Effects.fetCompressor.threshold, compressorDbToRaw(it)) },
             valueRange = -48f..0f,
-            valueLabel = "$threshold dB",
+            valueLabel = "${thresholdDb.roundToInt()} dB",
             edit =
                 SliderEdit(
-                    displayValue = threshold.toDouble(),
+                    displayValue = thresholdDb.toDouble(),
                     displayRange = -48.0..0.0,
                     decimals = 0,
                     unit = "dB",
-                    onCommit = { viewModel.applyPref(Effects.fetCompressor.threshold, it.roundToInt().coerceIn(-48, 0)) },
+                    onCommit = {
+                        viewModel.applyPref(
+                            Effects.fetCompressor.threshold,
+                            compressorDbToRaw(it.toFloat().coerceIn(-48.0f, 0.0f)),
+                        )
+                    },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_ratio),
-            value = ratio / 100f,
-            onValueChange = { viewModel.applyPref(Effects.fetCompressor.ratio, (it * 100f).roundToInt()) },
+            value = ratioDisplay,
+            onValueChange = { viewModel.applyPref(Effects.fetCompressor.ratio, compressorRatioToRaw(it)) },
             valueRange = 0f..2f,
-            valueLabel = String.format(Locale.US, "%.1f", ratio / 100.0),
+            valueLabel = String.format(Locale.US, "%.1f", ratioDisplay),
             edit =
                 SliderEdit(
-                    displayValue = ratio / 100.0,
+                    displayValue = ratioDisplay.toDouble(),
                     displayRange = 0.0..2.0,
                     decimals = 1,
-                    onCommit = { viewModel.applyPref(Effects.fetCompressor.ratio, (it * 100).roundToInt().coerceIn(0, 200)) },
+                    onCommit = {
+                        viewModel.applyPref(
+                            Effects.fetCompressor.ratio,
+                            compressorRatioToRaw(it.toFloat().coerceIn(0.0f, 2.0f)),
+                        )
+                    },
                 ),
         )
         LabeledSwitch(
@@ -511,33 +547,33 @@ fun FetCompressorSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_knee),
-            value = knee.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.fetCompressor.knee, it.roundToInt()) },
+            value = kneeDb,
+            onValueChange = { viewModel.applyPref(Effects.fetCompressor.knee, compressorDbToRaw(it)) },
             valueRange = 0f..12f,
             enabled = !kneeAuto,
-            valueLabel = "$knee dB",
+            valueLabel = "${kneeDb.roundToInt()} dB",
             edit =
                 SliderEdit(
-                    displayValue = knee.toDouble(),
+                    displayValue = kneeDb.toDouble(),
                     displayRange = 0.0..12.0,
                     decimals = 0,
                     unit = "dB",
-                    onCommit = { viewModel.applyPref(Effects.fetCompressor.knee, it.roundToInt().coerceIn(0, 12)) },
+                    onCommit = { viewModel.applyPref(Effects.fetCompressor.knee, compressorDbToRaw(it.toFloat().coerceIn(0.0f, 12.0f))) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_knee_multi),
-            value = (kneeMulti / 100f * 4f),
-            onValueChange = { viewModel.applyPref(Effects.fetCompressor.kneeMulti, (it / 4f * 100f).roundToInt()) },
+            value = kneeMulti,
+            onValueChange = { viewModel.applyPref(Effects.fetCompressor.kneeMulti, it) },
             valueRange = 0f..4f,
-            valueLabel = String.format(Locale.US, "%.1fx", kneeMulti / 100.0 * 4.0),
+            valueLabel = String.format(Locale.US, "%.1fx", kneeMulti),
             edit =
                 SliderEdit(
-                    displayValue = kneeMulti / 100.0 * 4.0,
+                    displayValue = kneeMulti.toDouble(),
                     displayRange = 0.0..4.0,
                     decimals = 1,
                     unit = "x",
-                    onCommit = { viewModel.applyPref(Effects.fetCompressor.kneeMulti, (it / 4 * 100).roundToInt().coerceIn(0, 100)) },
+                    onCommit = { viewModel.applyPref(Effects.fetCompressor.kneeMulti, it.toFloat().coerceIn(0.0f, 4.0f)) },
                 ),
         )
         LabeledSwitch(
@@ -547,18 +583,18 @@ fun FetCompressorSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_gain),
-            value = gain.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.fetCompressor.gain, it.roundToInt()) },
+            value = gainDb,
+            onValueChange = { viewModel.applyPref(Effects.fetCompressor.gain, compressorDbToRaw(it)) },
             valueRange = 0f..24f,
             enabled = !gainAuto,
-            valueLabel = "$gain dB",
+            valueLabel = "${gainDb.roundToInt()} dB",
             edit =
                 SliderEdit(
-                    displayValue = gain.toDouble(),
+                    displayValue = gainDb.toDouble(),
                     displayRange = 0.0..24.0,
                     decimals = 0,
                     unit = "dB",
-                    onCommit = { viewModel.applyPref(Effects.fetCompressor.gain, it.roundToInt().coerceIn(0, 24)) },
+                    onCommit = { viewModel.applyPref(Effects.fetCompressor.gain, compressorDbToRaw(it.toFloat().coerceIn(0.0f, 24.0f))) },
                 ),
         )
         LabeledSwitch(
@@ -568,33 +604,43 @@ fun FetCompressorSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_attack),
-            value = attack.toFloat().coerceIn(1f, 100f),
-            onValueChange = { viewModel.applyPref(Effects.fetCompressor.attack, it.roundToInt()) },
+            value = attackMs.coerceIn(1f, 100f),
+            onValueChange = { viewModel.applyPref(Effects.fetCompressor.attack, compressorMsToSeconds(it)) },
             valueRange = 1f..100f,
             enabled = !attackAuto,
-            valueLabel = "$attack ms",
+            valueLabel = "${attackMs.roundToInt()} ms",
             edit =
                 SliderEdit(
-                    displayValue = attack.toDouble(),
+                    displayValue = attackMs.toDouble(),
                     displayRange = 1.0..100.0,
                     decimals = 0,
                     unit = "ms",
-                    onCommit = { viewModel.applyPref(Effects.fetCompressor.attack, it.roundToInt().coerceIn(1, 100)) },
+                    onCommit = {
+                        viewModel.applyPref(
+                            Effects.fetCompressor.attack,
+                            compressorMsToSeconds(it.toFloat().coerceIn(1.0f, 100.0f)),
+                        )
+                    },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_max_attack),
-            value = maxAttack.toFloat().coerceIn(1f, 100f),
-            onValueChange = { viewModel.applyPref(Effects.fetCompressor.maxAttack, it.roundToInt()) },
+            value = maxAttackMs.coerceIn(1f, 100f),
+            onValueChange = { viewModel.applyPref(Effects.fetCompressor.maxAttack, compressorMsToSeconds(it)) },
             valueRange = 1f..100f,
-            valueLabel = "$maxAttack ms",
+            valueLabel = "${maxAttackMs.roundToInt()} ms",
             edit =
                 SliderEdit(
-                    displayValue = maxAttack.toDouble(),
+                    displayValue = maxAttackMs.toDouble(),
                     displayRange = 1.0..100.0,
                     decimals = 0,
                     unit = "ms",
-                    onCommit = { viewModel.applyPref(Effects.fetCompressor.maxAttack, it.roundToInt().coerceIn(1, 100)) },
+                    onCommit = {
+                        viewModel.applyPref(
+                            Effects.fetCompressor.maxAttack,
+                            compressorMsToSeconds(it.toFloat().coerceIn(1.0f, 100.0f)),
+                        )
+                    },
                 ),
         )
         LabeledSwitch(
@@ -604,63 +650,78 @@ fun FetCompressorSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_release),
-            value = release.toFloat().coerceIn(5f, 500f),
-            onValueChange = { viewModel.applyPref(Effects.fetCompressor.release, it.roundToInt()) },
+            value = releaseMs.coerceIn(5f, 500f),
+            onValueChange = { viewModel.applyPref(Effects.fetCompressor.release, compressorMsToSeconds(it)) },
             valueRange = 5f..500f,
             enabled = !releaseAuto,
-            valueLabel = "$release ms",
+            valueLabel = "${releaseMs.roundToInt()} ms",
             edit =
                 SliderEdit(
-                    displayValue = release.toDouble(),
+                    displayValue = releaseMs.toDouble(),
                     displayRange = 5.0..500.0,
                     decimals = 0,
                     unit = "ms",
-                    onCommit = { viewModel.applyPref(Effects.fetCompressor.release, it.roundToInt().coerceIn(5, 500)) },
+                    onCommit = {
+                        viewModel.applyPref(
+                            Effects.fetCompressor.release,
+                            compressorMsToSeconds(it.toFloat().coerceIn(5.0f, 500.0f)),
+                        )
+                    },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_max_release),
-            value = maxRelease.toFloat().coerceIn(5f, 500f),
-            onValueChange = { viewModel.applyPref(Effects.fetCompressor.maxRelease, it.roundToInt()) },
+            value = maxReleaseMs.coerceIn(5f, 500f),
+            onValueChange = { viewModel.applyPref(Effects.fetCompressor.maxRelease, compressorMsToSeconds(it)) },
             valueRange = 5f..500f,
-            valueLabel = "$maxRelease ms",
+            valueLabel = "${maxReleaseMs.roundToInt()} ms",
             edit =
                 SliderEdit(
-                    displayValue = maxRelease.toDouble(),
+                    displayValue = maxReleaseMs.toDouble(),
                     displayRange = 5.0..500.0,
                     decimals = 0,
                     unit = "ms",
-                    onCommit = { viewModel.applyPref(Effects.fetCompressor.maxRelease, it.roundToInt().coerceIn(5, 500)) },
+                    onCommit = {
+                        viewModel.applyPref(
+                            Effects.fetCompressor.maxRelease,
+                            compressorMsToSeconds(it.toFloat().coerceIn(5.0f, 500.0f)),
+                        )
+                    },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_crest),
-            value = crest.toFloat().coerceIn(5f, 300f),
-            onValueChange = { viewModel.applyPref(Effects.fetCompressor.crest, it.roundToInt()) },
+            value = crestMs.coerceIn(5f, 300f),
+            onValueChange = { viewModel.applyPref(Effects.fetCompressor.crest, compressorMsToSeconds(it)) },
             valueRange = 5f..300f,
-            valueLabel = "$crest ms",
+            valueLabel = "${crestMs.roundToInt()} ms",
             edit =
                 SliderEdit(
-                    displayValue = crest.toDouble(),
+                    displayValue = crestMs.toDouble(),
                     displayRange = 5.0..300.0,
                     decimals = 0,
                     unit = "ms",
-                    onCommit = { viewModel.applyPref(Effects.fetCompressor.crest, it.roundToInt().coerceIn(5, 300)) },
+                    onCommit = {
+                        viewModel.applyPref(
+                            Effects.fetCompressor.crest,
+                            compressorMsToSeconds(it.toFloat().coerceIn(5.0f, 300.0f)),
+                        )
+                    },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_adapt),
-            value = adapt.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.fetCompressor.adapt, it.roundToInt()) },
-            valueRange = 0f..200f,
-            valueLabel = "$adapt%",
+            value = adapt,
+            onValueChange = { viewModel.applyPref(Effects.fetCompressor.adapt, it) },
+            valueRange = 1f..16f,
+            valueLabel = String.format(Locale.US, "%.1fs", adapt),
             edit =
                 SliderEdit(
                     displayValue = adapt.toDouble(),
-                    displayRange = 0.0..200.0,
-                    decimals = 0,
-                    unit = "%",
-                    onCommit = { viewModel.applyPref(Effects.fetCompressor.adapt, it.roundToInt().coerceIn(0, 200)) },
+                    displayRange = 1.0..16.0,
+                    decimals = 1,
+                    unit = "s",
+                    onCommit = { viewModel.applyPref(Effects.fetCompressor.adapt, it.toFloat().coerceIn(1.0f, 16.0f)) },
                 ),
         )
         LabeledSwitch(
@@ -704,41 +765,50 @@ fun MultibandCompressorSection(
     val tabNames = listOf("Sub", "Low", "Mid", "Pres", "Air")
     val b = selectedTab
 
-    val threshold = thresholds.getOrElse(b) { -18 }
-    val ratio = ratios.getOrElse(b) { 50 }
-    val gain = gains.getOrElse(b) { 24 }
-    val knee = knees.getOrElse(b) { 0 }
-    val kneeMulti = kneeMultis.getOrElse(b) { 0 }
-    val attack = attacks.getOrElse(b) { 1 }
-    val maxAttack = maxAttacks.getOrElse(b) { 44 }
-    val release = releases.getOrElse(b) { 100 }
-    val maxRelease = maxReleases.getOrElse(b) { 200 }
-    val crest = crests.getOrElse(b) { 100 }
-    val adapt = adapts.getOrElse(b) { 50 }
+    val threshold = thresholds.getOrElse(b) { compressorDbToRaw(-18.0f) }
+    val ratio = ratios.getOrElse(b) { compressorRatioToRaw(0.5f) }
+    val gain = gains.getOrElse(b) { 0.0f }
+    val knee = knees.getOrElse(b) { 0.0f }
+    val kneeMulti = kneeMultis.getOrElse(b) { 0.0f }
+    val attack = attacks.getOrElse(b) { compressorMsToSeconds(1.0f) }
+    val maxAttack = maxAttacks.getOrElse(b) { compressorMsToSeconds(44.0f) }
+    val release = releases.getOrElse(b) { compressorMsToSeconds(100.0f) }
+    val maxRelease = maxReleases.getOrElse(b) { compressorMsToSeconds(200.0f) }
+    val crest = crests.getOrElse(b) { compressorMsToSeconds(100.0f) }
+    val adapt = adapts.getOrElse(b) { compressorAdaptAmountToSeconds(0.5f) }
     val bandEnabled = bandEnables.getOrElse(b) { true }
     val kneeAuto = kneeAutos.getOrElse(b) { true }
     val gainAuto = gainAutos.getOrElse(b) { true }
     val attackAuto = attackAutos.getOrElse(b) { true }
     val releaseAuto = releaseAutos.getOrElse(b) { true }
     val noClip = noClips.getOrElse(b) { true }
+    val thresholdDb = compressorRawToDb(threshold)
+    val ratioDisplay = compressorRawToRatio(ratio)
+    val kneeDb = compressorRawToDb(knee)
+    val gainDb = compressorRawToDb(gain)
+    val attackMs = compressorSecondsToMs(attack)
+    val maxAttackMs = compressorSecondsToMs(maxAttack)
+    val releaseMs = compressorSecondsToMs(release)
+    val maxReleaseMs = compressorSecondsToMs(maxRelease)
+    val crestMs = compressorSecondsToMs(crest)
 
     val onBandEnableChange: (Boolean) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.bandEnables, b, it) }
     val onCrossoverChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.crossovers, b, it) }
-    val onThresholdChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.thresholds, b, it) }
-    val onRatioChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.ratios, b, it) }
+    val onThresholdChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.thresholds, b, it) }
+    val onRatioChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.ratios, b, it) }
     val onAutoKneeChange: (Boolean) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.kneeAutos, b, it) }
-    val onKneeChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.knees, b, it) }
-    val onKneeMultiChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.kneeMultis, b, it) }
+    val onKneeChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.knees, b, it) }
+    val onKneeMultiChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.kneeMultis, b, it) }
     val onAutoGainChange: (Boolean) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.gainAutos, b, it) }
-    val onGainChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.gains, b, it) }
+    val onGainChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.gains, b, it) }
     val onAutoAttackChange: (Boolean) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.attackAutos, b, it) }
-    val onAttackChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.attacks, b, it) }
-    val onMaxAttackChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.maxAttacks, b, it) }
+    val onAttackChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.attacks, b, it) }
+    val onMaxAttackChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.maxAttacks, b, it) }
     val onAutoReleaseChange: (Boolean) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.releaseAutos, b, it) }
-    val onReleaseChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.releases, b, it) }
-    val onMaxReleaseChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.maxReleases, b, it) }
-    val onCrestChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.crests, b, it) }
-    val onAdaptChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.adapts, b, it) }
+    val onReleaseChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.releases, b, it) }
+    val onMaxReleaseChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.maxReleases, b, it) }
+    val onCrestChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.crests, b, it) }
+    val onAdaptChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.adapts, b, it) }
     val onNoClipChange: (Boolean) -> Unit = { viewModel.applyBandPref(Effects.multibandCompressor.noClips, b, it) }
 
     EffectSection(
@@ -808,31 +878,31 @@ fun MultibandCompressorSection(
 
         LabeledSlider(
             label = stringResource(R.string.label_threshold),
-            value = threshold.toFloat(),
-            onValueChange = { onThresholdChange(it.roundToInt()) },
+            value = thresholdDb,
+            onValueChange = { onThresholdChange(compressorDbToRaw(it)) },
             valueRange = -48f..0f,
-            valueLabel = "$threshold dB",
+            valueLabel = "${thresholdDb.roundToInt()} dB",
             edit =
                 SliderEdit(
-                    displayValue = threshold.toDouble(),
+                    displayValue = thresholdDb.toDouble(),
                     displayRange = -48.0..0.0,
                     decimals = 0,
                     unit = "dB",
-                    onCommit = { onThresholdChange(it.roundToInt().coerceIn(-48, 0)) },
+                    onCommit = { onThresholdChange(compressorDbToRaw(it.toFloat().coerceIn(-48.0f, 0.0f))) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_ratio),
-            value = ratio / 100f,
-            onValueChange = { onRatioChange((it * 100f).roundToInt()) },
+            value = ratioDisplay,
+            onValueChange = { onRatioChange(compressorRatioToRaw(it)) },
             valueRange = 0f..2f,
-            valueLabel = String.format(Locale.US, "%.1f", ratio / 100.0),
+            valueLabel = String.format(Locale.US, "%.1f", ratioDisplay),
             edit =
                 SliderEdit(
-                    displayValue = ratio / 100.0,
+                    displayValue = ratioDisplay.toDouble(),
                     displayRange = 0.0..2.0,
                     decimals = 1,
-                    onCommit = { onRatioChange((it * 100).roundToInt().coerceIn(0, 200)) },
+                    onCommit = { onRatioChange(compressorRatioToRaw(it.toFloat().coerceIn(0.0f, 2.0f))) },
                 ),
         )
         LabeledSwitch(
@@ -842,33 +912,33 @@ fun MultibandCompressorSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_knee),
-            value = knee.toFloat(),
-            onValueChange = { onKneeChange(it.roundToInt()) },
+            value = kneeDb,
+            onValueChange = { onKneeChange(compressorDbToRaw(it)) },
             valueRange = 0f..12f,
             enabled = !kneeAuto,
-            valueLabel = "$knee dB",
+            valueLabel = "${kneeDb.roundToInt()} dB",
             edit =
                 SliderEdit(
-                    displayValue = knee.toDouble(),
+                    displayValue = kneeDb.toDouble(),
                     displayRange = 0.0..12.0,
                     decimals = 0,
                     unit = "dB",
-                    onCommit = { onKneeChange(it.roundToInt().coerceIn(0, 12)) },
+                    onCommit = { onKneeChange(compressorDbToRaw(it.toFloat().coerceIn(0.0f, 12.0f))) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_knee_multi),
-            value = (kneeMulti / 100f * 4f),
-            onValueChange = { onKneeMultiChange((it / 4f * 100f).roundToInt()) },
+            value = kneeMulti,
+            onValueChange = { onKneeMultiChange(it) },
             valueRange = 0f..4f,
-            valueLabel = String.format(Locale.US, "%.1fx", kneeMulti / 100.0 * 4.0),
+            valueLabel = String.format(Locale.US, "%.1fx", kneeMulti),
             edit =
                 SliderEdit(
-                    displayValue = kneeMulti / 100.0 * 4.0,
+                    displayValue = kneeMulti.toDouble(),
                     displayRange = 0.0..4.0,
                     decimals = 1,
                     unit = "x",
-                    onCommit = { onKneeMultiChange((it / 4 * 100).roundToInt().coerceIn(0, 100)) },
+                    onCommit = { onKneeMultiChange(it.toFloat().coerceIn(0.0f, 4.0f)) },
                 ),
         )
         LabeledSwitch(
@@ -878,18 +948,18 @@ fun MultibandCompressorSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_gain),
-            value = gain.toFloat(),
-            onValueChange = { onGainChange(it.roundToInt()) },
+            value = gainDb,
+            onValueChange = { onGainChange(compressorDbToRaw(it)) },
             valueRange = 0f..24f,
             enabled = !gainAuto,
-            valueLabel = "$gain dB",
+            valueLabel = "${gainDb.roundToInt()} dB",
             edit =
                 SliderEdit(
-                    displayValue = gain.toDouble(),
+                    displayValue = gainDb.toDouble(),
                     displayRange = 0.0..24.0,
                     decimals = 0,
                     unit = "dB",
-                    onCommit = { onGainChange(it.roundToInt().coerceIn(0, 24)) },
+                    onCommit = { onGainChange(compressorDbToRaw(it.toFloat().coerceIn(0.0f, 24.0f))) },
                 ),
         )
         LabeledSwitch(
@@ -899,33 +969,33 @@ fun MultibandCompressorSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_attack),
-            value = attack.toFloat().coerceIn(1f, 100f),
-            onValueChange = { onAttackChange(it.roundToInt()) },
+            value = attackMs.coerceIn(1f, 100f),
+            onValueChange = { onAttackChange(compressorMsToSeconds(it)) },
             valueRange = 1f..100f,
             enabled = !attackAuto,
-            valueLabel = "$attack ms",
+            valueLabel = "${attackMs.roundToInt()} ms",
             edit =
                 SliderEdit(
-                    displayValue = attack.toDouble(),
+                    displayValue = attackMs.toDouble(),
                     displayRange = 1.0..100.0,
                     decimals = 0,
                     unit = "ms",
-                    onCommit = { onAttackChange(it.roundToInt().coerceIn(1, 100)) },
+                    onCommit = { onAttackChange(compressorMsToSeconds(it.toFloat().coerceIn(1.0f, 100.0f))) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_max_attack),
-            value = maxAttack.toFloat().coerceIn(1f, 100f),
-            onValueChange = { onMaxAttackChange(it.roundToInt()) },
+            value = maxAttackMs.coerceIn(1f, 100f),
+            onValueChange = { onMaxAttackChange(compressorMsToSeconds(it)) },
             valueRange = 1f..100f,
-            valueLabel = "$maxAttack ms",
+            valueLabel = "${maxAttackMs.roundToInt()} ms",
             edit =
                 SliderEdit(
-                    displayValue = maxAttack.toDouble(),
+                    displayValue = maxAttackMs.toDouble(),
                     displayRange = 1.0..100.0,
                     decimals = 0,
                     unit = "ms",
-                    onCommit = { onMaxAttackChange(it.roundToInt().coerceIn(1, 100)) },
+                    onCommit = { onMaxAttackChange(compressorMsToSeconds(it.toFloat().coerceIn(1.0f, 100.0f))) },
                 ),
         )
         LabeledSwitch(
@@ -935,63 +1005,63 @@ fun MultibandCompressorSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_release),
-            value = release.toFloat().coerceIn(5f, 500f),
-            onValueChange = { onReleaseChange(it.roundToInt()) },
+            value = releaseMs.coerceIn(5f, 500f),
+            onValueChange = { onReleaseChange(compressorMsToSeconds(it)) },
             valueRange = 5f..500f,
             enabled = !releaseAuto,
-            valueLabel = "$release ms",
+            valueLabel = "${releaseMs.roundToInt()} ms",
             edit =
                 SliderEdit(
-                    displayValue = release.toDouble(),
+                    displayValue = releaseMs.toDouble(),
                     displayRange = 5.0..500.0,
                     decimals = 0,
                     unit = "ms",
-                    onCommit = { onReleaseChange(it.roundToInt().coerceIn(5, 500)) },
+                    onCommit = { onReleaseChange(compressorMsToSeconds(it.toFloat().coerceIn(5.0f, 500.0f))) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_max_release),
-            value = maxRelease.toFloat().coerceIn(5f, 500f),
-            onValueChange = { onMaxReleaseChange(it.roundToInt()) },
+            value = maxReleaseMs.coerceIn(5f, 500f),
+            onValueChange = { onMaxReleaseChange(compressorMsToSeconds(it)) },
             valueRange = 5f..500f,
-            valueLabel = "$maxRelease ms",
+            valueLabel = "${maxReleaseMs.roundToInt()} ms",
             edit =
                 SliderEdit(
-                    displayValue = maxRelease.toDouble(),
+                    displayValue = maxReleaseMs.toDouble(),
                     displayRange = 5.0..500.0,
                     decimals = 0,
                     unit = "ms",
-                    onCommit = { onMaxReleaseChange(it.roundToInt().coerceIn(5, 500)) },
+                    onCommit = { onMaxReleaseChange(compressorMsToSeconds(it.toFloat().coerceIn(5.0f, 500.0f))) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_crest),
-            value = crest.toFloat().coerceIn(5f, 300f),
-            onValueChange = { onCrestChange(it.roundToInt()) },
+            value = crestMs.coerceIn(5f, 300f),
+            onValueChange = { onCrestChange(compressorMsToSeconds(it)) },
             valueRange = 5f..300f,
-            valueLabel = "$crest ms",
+            valueLabel = "${crestMs.roundToInt()} ms",
             edit =
                 SliderEdit(
-                    displayValue = crest.toDouble(),
+                    displayValue = crestMs.toDouble(),
                     displayRange = 5.0..300.0,
                     decimals = 0,
                     unit = "ms",
-                    onCommit = { onCrestChange(it.roundToInt().coerceIn(5, 300)) },
+                    onCommit = { onCrestChange(compressorMsToSeconds(it.toFloat().coerceIn(5.0f, 300.0f))) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_fet_adapt),
-            value = adapt.toFloat(),
-            onValueChange = { onAdaptChange(it.roundToInt()) },
-            valueRange = 0f..200f,
-            valueLabel = "$adapt%",
+            value = adapt,
+            onValueChange = { onAdaptChange(it) },
+            valueRange = 1f..16f,
+            valueLabel = String.format(Locale.US, "%.1fs", adapt),
             edit =
                 SliderEdit(
                     displayValue = adapt.toDouble(),
-                    displayRange = 0.0..200.0,
-                    decimals = 0,
-                    unit = "%",
-                    onCommit = { onAdaptChange(it.roundToInt().coerceIn(0, 200)) },
+                    displayRange = 1.0..16.0,
+                    decimals = 1,
+                    unit = "s",
+                    onCommit = { onAdaptChange(it.toFloat().coerceIn(1.0f, 16.0f)) },
                 ),
         )
         LabeledSwitch(
@@ -1070,17 +1140,17 @@ fun SpectrumExtensionSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_vse_exciter),
-            value = exciter.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.spectrumExtension.exciter, it.roundToInt()) },
-            valueRange = 0f..100f,
-            valueLabel = "$exciter%",
+            value = exciter,
+            onValueChange = { viewModel.applyPref(Effects.spectrumExtension.exciter, it) },
+            valueRange = 0f..6f,
+            valueLabel = String.format(Locale.US, "%.1fx", exciter),
             edit =
                 SliderEdit(
                     displayValue = exciter.toDouble(),
-                    displayRange = 0.0..100.0,
-                    decimals = 0,
-                    unit = "%",
-                    onCommit = { viewModel.applyPref(Effects.spectrumExtension.exciter, it.roundToInt().coerceIn(0, 100)) },
+                    displayRange = 0.0..6.0,
+                    decimals = 1,
+                    unit = "x",
+                    onCommit = { viewModel.applyPref(Effects.spectrumExtension.exciter, it.toFloat().coerceIn(0.0f, 6.0f)) },
                 ),
         )
     }
@@ -1230,7 +1300,10 @@ fun DynamicEqSection(
                             .combinedClickable(
                                 onClick = { selectedTab = i },
                                 onLongClick = { if (bandCount > 1) deleteBandIndex = i },
-                            ).padding(horizontal = DynamicEqTabHorizontalPadding, vertical = DynamicEqTabVerticalPadding),
+                            ).padding(
+                                horizontal = DynamicEqTabHorizontalPadding,
+                                vertical = DynamicEqTabVerticalPadding,
+                            ),
                 ) {
                     Text(
                         text = formatFreq(freqs.getOrElse(i) { 1000 }),
@@ -1248,7 +1321,10 @@ fun DynamicEqSection(
                             .clickable {
                                 viewModel.addDynamicEqBand()
                                 selectedTab = bandCount
-                            }.padding(horizontal = DynamicEqTabHorizontalPadding, vertical = DynamicEqTabVerticalPadding),
+                            }.padding(
+                                horizontal = DynamicEqTabHorizontalPadding,
+                                vertical = DynamicEqTabVerticalPadding,
+                            ),
                 ) {
                     Icon(
                         Icons.Default.Add,
@@ -1261,11 +1337,11 @@ fun DynamicEqSection(
 
         if (bandCount > 0) {
             val freq = freqs.getOrElse(safeTab) { 1000 }
-            val q = qs.getOrElse(safeTab) { 150 }
-            val gain = gains.getOrElse(safeTab) { 0 }
-            val threshold = thresholds.getOrElse(safeTab) { -300 }
-            val attack = attacks.getOrElse(safeTab) { 10 }
-            val release = releases.getOrElse(safeTab) { 100 }
+            val q = qs.getOrElse(safeTab) { 1.5f }
+            val gain = gains.getOrElse(safeTab) { 0.0f }
+            val threshold = thresholds.getOrElse(safeTab) { -30.0f }
+            val attack = attacks.getOrElse(safeTab) { 10.0f }
+            val release = releases.getOrElse(safeTab) { 100.0f }
             val filterType = filterTypes.getOrElse(safeTab) { 0 }.coerceIn(0, 2)
 
             val minFreq =
@@ -1274,12 +1350,12 @@ fun DynamicEqSection(
                 if (safeTab < bandCount - 1) (freqs.getOrElse(safeTab + 1) { 20000 } - 5).toFloat() else 20000f
 
             val onFreqChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.dynamicEq.freqs, safeTab, it, bandCount) }
-            val onQChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.dynamicEq.qs, safeTab, it, bandCount) }
-            val onGainChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.dynamicEq.gains, safeTab, it, bandCount) }
-            val onThresholdChange: (Int) -> Unit =
+            val onQChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.dynamicEq.qs, safeTab, it, bandCount) }
+            val onGainChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.dynamicEq.gains, safeTab, it, bandCount) }
+            val onThresholdChange: (Float) -> Unit =
                 { viewModel.applyBandPref(Effects.dynamicEq.thresholds, safeTab, it, bandCount) }
-            val onAttackChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.dynamicEq.attacks, safeTab, it, bandCount) }
-            val onReleaseChange: (Int) -> Unit = { viewModel.applyBandPref(Effects.dynamicEq.releases, safeTab, it, bandCount) }
+            val onAttackChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.dynamicEq.attacks, safeTab, it, bandCount) }
+            val onReleaseChange: (Float) -> Unit = { viewModel.applyBandPref(Effects.dynamicEq.releases, safeTab, it, bandCount) }
             val onFilterTypeChange: (Int) -> Unit =
                 { viewModel.applyBandPref(Effects.dynamicEq.filterTypes, safeTab, it, bandCount) }
 
@@ -1301,76 +1377,76 @@ fun DynamicEqSection(
             )
             LabeledSlider(
                 label = stringResource(R.string.label_dynamic_eq_q_factor),
-                value = q.toFloat(),
-                onValueChange = { onQChange(it.roundToInt()) },
-                valueRange = 50f..800f,
-                valueLabel = String.format(Locale.US, "%.1f", q / 100f),
+                value = q,
+                onValueChange = { onQChange(it) },
+                valueRange = 0.5f..8.0f,
+                valueLabel = String.format(Locale.US, "%.1f", q),
                 edit =
                     SliderEdit(
-                        displayValue = q / 100.0,
+                        displayValue = q.toDouble(),
                         displayRange = 0.5..8.0,
                         decimals = 1,
-                        onCommit = { onQChange((it * 100).roundToInt().coerceIn(50, 800)) },
+                        onCommit = { onQChange(it.toFloat().coerceIn(0.5f, 8.0f)) },
                     ),
             )
             LabeledSlider(
                 label = stringResource(R.string.label_dynamic_eq_target_gain),
-                value = gain.toFloat(),
-                onValueChange = { onGainChange(it.roundToInt()) },
-                valueRange = -120f..120f,
-                valueLabel = String.format(Locale.US, "%.1f dB", gain / 10f),
+                value = gain,
+                onValueChange = { onGainChange(it) },
+                valueRange = -12f..12f,
+                valueLabel = String.format(Locale.US, "%.1f dB", gain),
                 edit =
                     SliderEdit(
-                        displayValue = gain / 10.0,
+                        displayValue = gain.toDouble(),
                         displayRange = -12.0..12.0,
                         decimals = 1,
                         unit = "dB",
-                        onCommit = { onGainChange((it * 10).roundToInt().coerceIn(-120, 120)) },
+                        onCommit = { onGainChange(it.toFloat().coerceIn(-12.0f, 12.0f)) },
                     ),
             )
             LabeledSlider(
                 label = stringResource(R.string.label_threshold),
-                value = threshold.toFloat(),
-                onValueChange = { onThresholdChange(it.roundToInt()) },
-                valueRange = -800f..0f,
-                valueLabel = "${threshold / 10} dB",
+                value = threshold,
+                onValueChange = { onThresholdChange(it) },
+                valueRange = -80f..0f,
+                valueLabel = String.format(Locale.US, "%.1f dB", threshold),
                 edit =
                     SliderEdit(
-                        displayValue = threshold / 10.0,
+                        displayValue = threshold.toDouble(),
                         displayRange = -80.0..0.0,
                         decimals = 1,
                         unit = "dB",
-                        onCommit = { onThresholdChange((it * 10).roundToInt().coerceIn(-800, 0)) },
+                        onCommit = { onThresholdChange(it.toFloat().coerceIn(-80.0f, 0.0f)) },
                     ),
             )
             LabeledSlider(
                 label = stringResource(R.string.label_attack),
-                value = attack.toFloat(),
-                onValueChange = { onAttackChange(it.roundToInt()) },
+                value = attack,
+                onValueChange = { onAttackChange(it) },
                 valueRange = 1f..100f,
-                valueLabel = "$attack ms",
+                valueLabel = "${attack.roundToInt()} ms",
                 edit =
                     SliderEdit(
                         displayValue = attack.toDouble(),
                         displayRange = 1.0..100.0,
                         decimals = 0,
                         unit = "ms",
-                        onCommit = { onAttackChange(it.roundToInt().coerceIn(1, 100)) },
+                        onCommit = { onAttackChange(it.toFloat().coerceIn(1.0f, 100.0f)) },
                     ),
             )
             LabeledSlider(
                 label = stringResource(R.string.label_release),
-                value = release.toFloat(),
-                onValueChange = { onReleaseChange(it.roundToInt()) },
+                value = release,
+                onValueChange = { onReleaseChange(it) },
                 valueRange = 10f..500f,
-                valueLabel = "$release ms",
+                valueLabel = "${release.roundToInt()} ms",
                 edit =
                     SliderEdit(
                         displayValue = release.toDouble(),
                         displayRange = 10.0..500.0,
                         decimals = 0,
                         unit = "ms",
-                        onCommit = { onReleaseChange(it.roundToInt().coerceIn(10, 500)) },
+                        onCommit = { onReleaseChange(it.toFloat().coerceIn(10.0f, 500.0f)) },
                     ),
             )
             val filterTypeNames =
@@ -1422,15 +1498,16 @@ fun ConvolverSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_convolver_cross_channel),
-            value = crossChannel.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.convolver.crossChannel, it.roundToInt()) },
-            valueRange = 0f..100f,
+            value = crossChannel,
+            onValueChange = { viewModel.applyPref(Effects.convolver.crossChannel, it) },
+            valueRange = 0f..1f,
+            valueLabel = "${(crossChannel * 100.0f).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = crossChannel.toDouble(),
+                    displayValue = (crossChannel * 100.0f).toDouble(),
                     displayRange = 0.0..100.0,
                     decimals = 0,
-                    onCommit = { viewModel.applyPref(Effects.convolver.crossChannel, it.roundToInt().coerceIn(0, 100)) },
+                    onCommit = { viewModel.applyPref(Effects.convolver.crossChannel, (it / 100.0).toFloat().coerceIn(0.0f, 1.0f)) },
                 ),
         )
     }
@@ -1456,45 +1533,51 @@ fun FieldSurroundSection(
     ) {
         LabeledSlider(
             label = stringResource(R.string.label_field_surround_widening),
-            value = widening.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.fieldSurround.widening, it.roundToInt()) },
+            value = widening,
+            onValueChange = { viewModel.applyPref(Effects.fieldSurround.widening, it) },
             valueRange = 0f..8f,
             steps = 7,
-            valueLabel = "$widening",
+            valueLabel = widening.roundToInt().toString(),
             edit =
                 SliderEdit(
                     displayValue = widening.toDouble(),
                     displayRange = 0.0..8.0,
                     decimals = 0,
-                    onCommit = { viewModel.applyPref(Effects.fieldSurround.widening, it.roundToInt().coerceIn(0, 8)) },
+                    onCommit = { viewModel.applyPref(Effects.fieldSurround.widening, it.toFloat().coerceIn(0.0f, 8.0f)) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_field_surround_mid_image),
-            value = midImage.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.fieldSurround.midImage, it.roundToInt()) },
-            valueRange = 0f..10f,
-            steps = 9,
+            value = midImage,
+            onValueChange = { viewModel.applyPref(Effects.fieldSurround.midImage, it) },
+            valueRange = 1f..2f,
+            valueLabel = String.format(Locale.US, "%.1f", midImage),
             edit =
                 SliderEdit(
                     displayValue = midImage.toDouble(),
-                    displayRange = 0.0..10.0,
-                    decimals = 0,
-                    onCommit = { viewModel.applyPref(Effects.fieldSurround.midImage, it.roundToInt().coerceIn(0, 10)) },
+                    displayRange = 1.0..2.0,
+                    decimals = 1,
+                    onCommit = { viewModel.applyPref(Effects.fieldSurround.midImage, it.toFloat().coerceIn(1.0f, 2.0f)) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_depth),
             value = depth.toFloat(),
             onValueChange = { viewModel.applyPref(Effects.fieldSurround.depth, it.roundToInt()) },
-            valueRange = 0f..10f,
-            steps = 9,
+            valueRange = 200f..950f,
+            valueLabel = "${((depth - 200) / 750.0 * 100.0).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = depth.toDouble(),
-                    displayRange = 0.0..10.0,
+                    displayValue = ((depth - 200) / 750.0 * 100.0),
+                    displayRange = 0.0..100.0,
                     decimals = 0,
-                    onCommit = { viewModel.applyPref(Effects.fieldSurround.depth, it.roundToInt().coerceIn(0, 10)) },
+                    unit = "%",
+                    onCommit = {
+                        viewModel.applyPref(
+                            Effects.fieldSurround.depth,
+                            (it / 100.0 * 750.0 + 200.0).roundToInt().coerceIn(200, 950),
+                        )
+                    },
                 ),
         )
     }
@@ -1521,18 +1604,18 @@ fun DiffSurroundSection(
     ) {
         LabeledSlider(
             label = stringResource(R.string.label_delay),
-            value = delay.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.diffSurround.delay, it.roundToInt()) },
+            value = delay,
+            onValueChange = { viewModel.applyPref(Effects.diffSurround.delay, it) },
             valueRange = 1f..20f,
             steps = 18,
-            valueLabel = "$delay ms",
+            valueLabel = "${delay.roundToInt()} ms",
             edit =
                 SliderEdit(
                     displayValue = delay.toDouble(),
                     displayRange = 1.0..20.0,
                     decimals = 0,
                     unit = "ms",
-                    onCommit = { viewModel.applyPref(Effects.diffSurround.delay, it.roundToInt().coerceIn(1, 20)) },
+                    onCommit = { viewModel.applyPref(Effects.diffSurround.delay, it.toFloat().coerceIn(1.0f, 20.0f)) },
                 ),
         )
         LabeledSwitch(
@@ -1542,17 +1625,17 @@ fun DiffSurroundSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_diff_surround_wet_dry_mix),
-            value = wetDryMix.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.diffSurround.wetDryMix, it.roundToInt()) },
-            valueRange = 0f..100f,
-            valueLabel = "$wetDryMix%",
+            value = wetDryMix,
+            onValueChange = { viewModel.applyPref(Effects.diffSurround.wetDryMix, it) },
+            valueRange = 0f..1f,
+            valueLabel = "${(wetDryMix * 100.0f).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = wetDryMix.toDouble(),
+                    displayValue = (wetDryMix * 100.0f).toDouble(),
                     displayRange = 0.0..100.0,
                     decimals = 0,
                     unit = "%",
-                    onCommit = { viewModel.applyPref(Effects.diffSurround.wetDryMix, it.roundToInt().coerceIn(0, 100)) },
+                    onCommit = { viewModel.applyPref(Effects.diffSurround.wetDryMix, (it / 100.0).toFloat().coerceIn(0.0f, 1.0f)) },
                 ),
         )
         LabeledSlider(
@@ -1596,47 +1679,47 @@ fun StereoImagerSection(
     ) {
         LabeledSlider(
             label = stringResource(R.string.label_stereo_imager_low_width),
-            value = lowWidth.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.stereoImager.lowWidth, it.roundToInt()) },
-            valueRange = 0f..200f,
-            valueLabel = "$lowWidth%",
+            value = lowWidth,
+            onValueChange = { viewModel.applyPref(Effects.stereoImager.lowWidth, it) },
+            valueRange = 0f..2f,
+            valueLabel = "${(lowWidth * 100.0f).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = lowWidth.toDouble(),
+                    displayValue = (lowWidth * 100.0f).toDouble(),
                     displayRange = 0.0..200.0,
                     decimals = 0,
                     unit = "%",
-                    onCommit = { viewModel.applyPref(Effects.stereoImager.lowWidth, it.roundToInt().coerceIn(0, 200)) },
+                    onCommit = { viewModel.applyPref(Effects.stereoImager.lowWidth, (it / 100.0).toFloat().coerceIn(0.0f, 2.0f)) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_stereo_imager_mid_width),
-            value = midWidth.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.stereoImager.midWidth, it.roundToInt()) },
-            valueRange = 0f..200f,
-            valueLabel = "$midWidth%",
+            value = midWidth,
+            onValueChange = { viewModel.applyPref(Effects.stereoImager.midWidth, it) },
+            valueRange = 0f..2f,
+            valueLabel = "${(midWidth * 100.0f).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = midWidth.toDouble(),
+                    displayValue = (midWidth * 100.0f).toDouble(),
                     displayRange = 0.0..200.0,
                     decimals = 0,
                     unit = "%",
-                    onCommit = { viewModel.applyPref(Effects.stereoImager.midWidth, it.roundToInt().coerceIn(0, 200)) },
+                    onCommit = { viewModel.applyPref(Effects.stereoImager.midWidth, (it / 100.0).toFloat().coerceIn(0.0f, 2.0f)) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_stereo_imager_high_width),
-            value = highWidth.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.stereoImager.highWidth, it.roundToInt()) },
-            valueRange = 0f..200f,
-            valueLabel = "$highWidth%",
+            value = highWidth,
+            onValueChange = { viewModel.applyPref(Effects.stereoImager.highWidth, it) },
+            valueRange = 0f..2f,
+            valueLabel = "${(highWidth * 100.0f).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = highWidth.toDouble(),
+                    displayValue = (highWidth * 100.0f).toDouble(),
                     displayRange = 0.0..200.0,
                     decimals = 0,
                     unit = "%",
-                    onCommit = { viewModel.applyPref(Effects.stereoImager.highWidth, it.roundToInt().coerceIn(0, 200)) },
+                    onCommit = { viewModel.applyPref(Effects.stereoImager.highWidth, (it / 100.0).toFloat().coerceIn(0.0f, 2.0f)) },
                 ),
         )
         LabeledSlider(
@@ -1729,74 +1812,74 @@ fun ReverberationSection(
     ) {
         LabeledSlider(
             label = stringResource(R.string.label_reverb_room_size),
-            value = roomSize.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.reverb.roomSize, it.roundToInt()) },
-            valueRange = 0f..10f,
-            steps = 9,
+            value = roomSize,
+            onValueChange = { viewModel.applyPref(Effects.reverb.roomSize, it) },
+            valueRange = 0f..1f,
+            valueLabel = (roomSize * 10.0f).roundToInt().toString(),
             edit =
                 SliderEdit(
-                    displayValue = roomSize.toDouble(),
+                    displayValue = (roomSize * 10.0f).toDouble(),
                     displayRange = 0.0..10.0,
                     decimals = 0,
-                    onCommit = { viewModel.applyPref(Effects.reverb.roomSize, it.roundToInt().coerceIn(0, 10)) },
+                    onCommit = { viewModel.applyPref(Effects.reverb.roomSize, (it / 10.0).toFloat().coerceIn(0.0f, 1.0f)) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_width),
-            value = width.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.reverb.width, it.roundToInt()) },
-            valueRange = 0f..10f,
-            steps = 9,
+            value = width,
+            onValueChange = { viewModel.applyPref(Effects.reverb.width, it) },
+            valueRange = 0f..1f,
+            valueLabel = (width * 10.0f).roundToInt().toString(),
             edit =
                 SliderEdit(
-                    displayValue = width.toDouble(),
+                    displayValue = (width * 10.0f).toDouble(),
                     displayRange = 0.0..10.0,
                     decimals = 0,
-                    onCommit = { viewModel.applyPref(Effects.reverb.width, it.roundToInt().coerceIn(0, 10)) },
+                    onCommit = { viewModel.applyPref(Effects.reverb.width, (it / 10.0).toFloat().coerceIn(0.0f, 1.0f)) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_reverb_dampening),
-            value = damp.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.reverb.damp, it.roundToInt()) },
-            valueRange = 0f..10f,
-            steps = 9,
+            value = damp,
+            onValueChange = { viewModel.applyPref(Effects.reverb.damp, it) },
+            valueRange = 0f..1f,
+            valueLabel = (damp * 10.0f).roundToInt().toString(),
             edit =
                 SliderEdit(
-                    displayValue = damp.toDouble(),
+                    displayValue = (damp * 10.0f).toDouble(),
                     displayRange = 0.0..10.0,
                     decimals = 0,
-                    onCommit = { viewModel.applyPref(Effects.reverb.damp, it.roundToInt().coerceIn(0, 10)) },
+                    onCommit = { viewModel.applyPref(Effects.reverb.damp, (it / 10.0).toFloat().coerceIn(0.0f, 1.0f)) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_reverb_wet),
-            value = wet.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.reverb.wet, it.roundToInt()) },
-            valueRange = 0f..100f,
-            valueLabel = "$wet%",
+            value = wet,
+            onValueChange = { viewModel.applyPref(Effects.reverb.wet, it) },
+            valueRange = 0f..1f,
+            valueLabel = "${(wet * 100.0f).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = wet.toDouble(),
+                    displayValue = (wet * 100.0f).toDouble(),
                     displayRange = 0.0..100.0,
                     decimals = 0,
                     unit = "%",
-                    onCommit = { viewModel.applyPref(Effects.reverb.wet, it.roundToInt().coerceIn(0, 100)) },
+                    onCommit = { viewModel.applyPref(Effects.reverb.wet, (it / 100.0).toFloat().coerceIn(0.0f, 1.0f)) },
                 ),
         )
         LabeledSlider(
             label = stringResource(R.string.label_reverb_dry),
-            value = dry.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.reverb.dry, it.roundToInt()) },
-            valueRange = 0f..100f,
-            valueLabel = "$dry%",
+            value = dry,
+            onValueChange = { viewModel.applyPref(Effects.reverb.dry, it) },
+            valueRange = 0f..1f,
+            valueLabel = "${(dry * 100.0f).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = dry.toDouble(),
+                    displayValue = (dry * 100.0f).toDouble(),
                     displayRange = 0.0..100.0,
                     decimals = 0,
                     unit = "%",
-                    onCommit = { viewModel.applyPref(Effects.reverb.dry, it.roundToInt().coerceIn(0, 100)) },
+                    onCommit = { viewModel.applyPref(Effects.reverb.dry, (it / 100.0).toFloat().coerceIn(0.0f, 1.0f)) },
                 ),
         )
     }
@@ -1884,17 +1967,17 @@ fun DynamicSystemSection(
 
         LabeledSlider(
             label = stringResource(R.string.label_dynamic_system_strength),
-            value = strength.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.dynamicSystem.strength, it.roundToInt()) },
-            valueRange = 0f..100f,
-            valueLabel = "$strength%",
+            value = strength,
+            onValueChange = { viewModel.applyPref(Effects.dynamicSystem.strength, it) },
+            valueRange = 0f..1f,
+            valueLabel = "${(strength * 100.0f).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = strength.toDouble(),
+                    displayValue = (strength * 100.0f).toDouble(),
                     displayRange = 0.0..100.0,
                     decimals = 0,
                     unit = "%",
-                    onCommit = { viewModel.applyPref(Effects.dynamicSystem.strength, it.roundToInt().coerceIn(0, 100)) },
+                    onCommit = { viewModel.applyPref(Effects.dynamicSystem.strength, (it / 100.0).toFloat().coerceIn(0.0f, 1.0f)) },
                 ),
         )
 
@@ -1968,33 +2051,33 @@ fun DynamicSystemSection(
 
         LabeledSlider(
             label = stringResource(R.string.label_dynamic_system_side_gain_low),
-            value = sideGainLow.toFloat(),
-            onValueChange = { onSideGainLowChange(it.roundToInt()) },
-            valueRange = 0f..100f,
-            valueLabel = "$sideGainLow%",
+            value = sideGainLow,
+            onValueChange = { onSideGainLowChange(it) },
+            valueRange = 0f..1f,
+            valueLabel = "${(sideGainLow * 100.0f).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = sideGainLow.toDouble(),
+                    displayValue = (sideGainLow * 100.0f).toDouble(),
                     displayRange = 0.0..100.0,
                     decimals = 0,
                     unit = "%",
-                    onCommit = { onSideGainLowChange(it.roundToInt().coerceIn(0, 100)) },
+                    onCommit = { onSideGainLowChange((it / 100.0).toFloat().coerceIn(0.0f, 1.0f)) },
                 ),
         )
 
         LabeledSlider(
             label = stringResource(R.string.label_dynamic_system_side_gain_high),
-            value = sideGainHigh.toFloat(),
-            onValueChange = { onSideGainHighChange(it.roundToInt()) },
-            valueRange = 0f..100f,
-            valueLabel = "$sideGainHigh%",
+            value = sideGainHigh,
+            onValueChange = { onSideGainHighChange(it) },
+            valueRange = 0f..1f,
+            valueLabel = "${(sideGainHigh * 100.0f).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = sideGainHigh.toDouble(),
+                    displayValue = (sideGainHigh * 100.0f).toDouble(),
                     displayRange = 0.0..100.0,
                     decimals = 0,
                     unit = "%",
-                    onCommit = { onSideGainHighChange(it.roundToInt().coerceIn(0, 100)) },
+                    onCommit = { onSideGainHighChange((it / 100.0).toFloat().coerceIn(0.0f, 1.0f)) },
                 ),
         )
     }
@@ -2096,17 +2179,17 @@ fun PsychoacousticBassSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_psycho_bass_intensity),
-            value = intensity.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.psychoacousticBass.intensity, it.roundToInt()) },
-            valueRange = 0f..100f,
-            valueLabel = "$intensity%",
+            value = intensity,
+            onValueChange = { viewModel.applyPref(Effects.psychoacousticBass.intensity, it) },
+            valueRange = 0f..1f,
+            valueLabel = "${(intensity * 100.0f).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = intensity.toDouble(),
+                    displayValue = (intensity * 100.0f).toDouble(),
                     displayRange = 0.0..100.0,
                     decimals = 0,
                     unit = "%",
-                    onCommit = { viewModel.applyPref(Effects.psychoacousticBass.intensity, it.roundToInt().coerceIn(0, 100)) },
+                    onCommit = { viewModel.applyPref(Effects.psychoacousticBass.intensity, (it / 100.0).toFloat().coerceIn(0.0f, 1.0f)) },
                 ),
         )
         LabeledSlider(
@@ -2119,17 +2202,22 @@ fun PsychoacousticBassSection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_psycho_bass_ori_bass_level),
-            value = originalLevel.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.psychoacousticBass.originalLevel, it.roundToInt()) },
-            valueRange = 0f..100f,
-            valueLabel = "$originalLevel%",
+            value = originalLevel,
+            onValueChange = { viewModel.applyPref(Effects.psychoacousticBass.originalLevel, it) },
+            valueRange = 0f..1f,
+            valueLabel = "${(originalLevel * 100.0f).roundToInt()}%",
             edit =
                 SliderEdit(
-                    displayValue = originalLevel.toDouble(),
+                    displayValue = (originalLevel * 100.0f).toDouble(),
                     displayRange = 0.0..100.0,
                     decimals = 0,
                     unit = "%",
-                    onCommit = { viewModel.applyPref(Effects.psychoacousticBass.originalLevel, it.roundToInt().coerceIn(0, 100)) },
+                    onCommit = {
+                        viewModel.applyPref(
+                            Effects.psychoacousticBass.originalLevel,
+                            (it / 100.0).toFloat().coerceIn(0.0f, 1.0f),
+                        )
+                    },
                 ),
         )
     }
@@ -2172,32 +2260,32 @@ fun ViperBassSection(
                 label = stringResource(R.string.label_frequency),
                 value = frequency.toFloat(),
                 onValueChange = { viewModel.applyPref(Effects.bass.frequency, it.roundToInt()) },
-                valueRange = 0f..135f,
+                valueRange = 15f..150f,
                 steps = 134,
-                valueLabel = "${frequency + 15}Hz",
+                valueLabel = "${frequency} Hz",
                 edit =
                     SliderEdit(
-                        displayValue = (frequency + 15).toDouble(),
+                        displayValue = frequency.toDouble(),
                         displayRange = 15.0..150.0,
                         decimals = 0,
                         unit = "Hz",
-                        onCommit = { viewModel.applyPref(Effects.bass.frequency, (it - 15).roundToInt().coerceIn(0, 135)) },
+                        onCommit = { viewModel.applyPref(Effects.bass.frequency, it.roundToInt().coerceIn(15, 150)) },
                     ),
             )
         }
         LabeledSlider(
             label = stringResource(R.string.label_gain),
-            value = gain.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.bass.gain, it.roundToInt()) },
-            valueRange = 50f..1000f,
-            valueLabel = "${"%.1f".format(gain / 100.0)}x",
+            value = gain,
+            onValueChange = { viewModel.applyPref(Effects.bass.gain, it) },
+            valueRange = 0.5f..10.0f,
+            valueLabel = String.format(Locale.US, "%.1fx", gain),
             edit =
                 SliderEdit(
-                    displayValue = gain / 100.0,
+                    displayValue = gain.toDouble(),
                     displayRange = 0.5..10.0,
                     decimals = 1,
                     unit = "x",
-                    onCommit = { viewModel.applyPref(Effects.bass.gain, (it * 100).roundToInt().coerceIn(50, 1000)) },
+                    onCommit = { viewModel.applyPref(Effects.bass.gain, it.toFloat().coerceIn(0.5f, 10.0f)) },
                 ),
         )
         LabeledSwitch(
@@ -2245,32 +2333,32 @@ fun ViperBassMonoSection(
                 label = stringResource(R.string.label_frequency),
                 value = frequency.toFloat(),
                 onValueChange = { viewModel.applyPref(Effects.bassMono.frequency, it.roundToInt()) },
-                valueRange = 0f..135f,
+                valueRange = 15f..150f,
                 steps = 134,
-                valueLabel = "${frequency + 15}Hz",
+                valueLabel = "${frequency} Hz",
                 edit =
                     SliderEdit(
-                        displayValue = (frequency + 15).toDouble(),
+                        displayValue = frequency.toDouble(),
                         displayRange = 15.0..150.0,
                         decimals = 0,
                         unit = "Hz",
-                        onCommit = { viewModel.applyPref(Effects.bassMono.frequency, (it - 15).roundToInt().coerceIn(0, 135)) },
+                        onCommit = { viewModel.applyPref(Effects.bassMono.frequency, it.roundToInt().coerceIn(15, 150)) },
                     ),
             )
         }
         LabeledSlider(
             label = stringResource(R.string.label_gain),
-            value = gain.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.bassMono.gain, it.roundToInt()) },
-            valueRange = 50f..1000f,
-            valueLabel = "${"%.1f".format(gain / 100.0)}x",
+            value = gain,
+            onValueChange = { viewModel.applyPref(Effects.bassMono.gain, it) },
+            valueRange = 0.5f..10.0f,
+            valueLabel = String.format(Locale.US, "%.1fx", gain),
             edit =
                 SliderEdit(
-                    displayValue = gain / 100.0,
+                    displayValue = gain.toDouble(),
                     displayRange = 0.5..10.0,
                     decimals = 1,
                     unit = "x",
-                    onCommit = { viewModel.applyPref(Effects.bassMono.gain, (it * 100).roundToInt().coerceIn(50, 1000)) },
+                    onCommit = { viewModel.applyPref(Effects.bassMono.gain, it.toFloat().coerceIn(0.5f, 10.0f)) },
                 ),
         )
         LabeledSwitch(
@@ -2313,17 +2401,17 @@ fun ViperClaritySection(
         )
         LabeledSlider(
             label = stringResource(R.string.label_gain),
-            value = gain.toFloat(),
-            onValueChange = { viewModel.applyPref(Effects.clarity.gain, it.roundToInt()) },
-            valueRange = 0f..450f,
-            valueLabel = "${"%.1f".format(gain / 100.0)}x",
+            value = gain,
+            onValueChange = { viewModel.applyPref(Effects.clarity.gain, it) },
+            valueRange = 0f..4.5f,
+            valueLabel = String.format(Locale.US, "%.1fx", gain),
             edit =
                 SliderEdit(
-                    displayValue = gain / 100.0,
+                    displayValue = gain.toDouble(),
                     displayRange = 0.0..4.5,
                     decimals = 1,
                     unit = "x",
-                    onCommit = { viewModel.applyPref(Effects.clarity.gain, (it * 100).roundToInt().coerceIn(0, 450)) },
+                    onCommit = { viewModel.applyPref(Effects.clarity.gain, it.toFloat().coerceIn(0.0f, 4.5f)) },
                 ),
         )
     }

@@ -33,6 +33,8 @@ import com.llsl.viper4android.effect.ENABLE_PREF_BY_EFFECT_KEY
 import com.llsl.viper4android.effect.EffectPref
 import com.llsl.viper4android.effect.EffectState
 import com.llsl.viper4android.effect.Effects
+import com.llsl.viper4android.effect.FloatListPref
+import com.llsl.viper4android.effect.FloatPref
 import com.llsl.viper4android.effect.IntListPref
 import com.llsl.viper4android.effect.IntPref
 import com.llsl.viper4android.effect.ListPref
@@ -231,12 +233,25 @@ class MainViewModel
         ) {
             uiState.update { pref.set(it, value) }
             if (pref.paramId != -1 && uiState.value.masterEnable && shouldDispatch(pref)) {
-                if (pref is DoubleListPref) {
-                    @Suppress("UNCHECKED_CAST")
-                    val bytes = pref.toRawArray(value as List<Double>)
-                    viperService?.dispatchParam(pref.paramId, bytes)
-                } else if (pref !is IntListPref && pref !is BoolListPref) {
-                    viperService?.dispatchParam(pref.paramId, pref.toRaw(value))
+                when (pref) {
+                    is BoolPref -> {
+                        viperService?.dispatchParam(pref.paramId, value as Boolean)
+                    }
+
+                    is IntPref -> {
+                        viperService?.dispatchParam(pref.paramId, value as Int)
+                    }
+
+                    is FloatPref -> {
+                        viperService?.dispatchParam(pref.paramId, value as Float)
+                    }
+
+                    is DoubleListPref -> {
+                        @Suppress("UNCHECKED_CAST")
+                        viperService?.dispatchParam(pref.paramId, pref.toFloatArray(value as List<Double>))
+                    }
+
+                    else -> {}
                 }
             }
             persistJobs[pref.prefKey]?.cancel()
@@ -269,7 +284,11 @@ class MainViewModel
             val updated = replaceAt(pref.get(uiState.value), band, value, pref.padValue, count)
             applyPref(pref, updated)
             ifMasterOn {
-                viperService?.dispatchParam(pref.paramId, band, pref.elementToRaw(value), 0)
+                when (value) {
+                    is Boolean -> viperService?.dispatchParam(pref.paramId, band, value)
+                    is Int -> viperService?.dispatchParam(pref.paramId, band, value)
+                    is Float -> viperService?.dispatchParam(pref.paramId, band, value)
+                }
             }
         }
 
@@ -293,6 +312,10 @@ class MainViewModel
                     repository.setIntPreference(pref.prefKey, value as Int)
                 }
 
+                is FloatPref -> {
+                    repository.setFloatPreference(pref.prefKey, value as Float)
+                }
+
                 is BoolPref -> {
                     repository.setBooleanPreference(pref.prefKey, value as Boolean)
                 }
@@ -308,6 +331,11 @@ class MainViewModel
                 is IntListPref -> {
                     val list = value as List<Int>
                     repository.setStringPreference(pref.prefKey, list.joinToString(";"))
+                }
+
+                is FloatListPref -> {
+                    val list = value as List<Float>
+                    repository.setStringPreference(pref.prefKey, list.joinToString(";") { String.format(Locale.US, "%.4f", it) })
                 }
 
                 is BoolListPref -> {
@@ -529,12 +557,12 @@ class MainViewModel
             applyPref(Effects.dynamicSystem.yHigh, value)
         }
 
-        fun setDynamicSystemSideGainLow(value: Int) {
+        fun setDynamicSystemSideGainLow(value: Float) {
             applyPref(Effects.dynamicSystem.presetId, null)
             applyPref(Effects.dynamicSystem.sideGainLow, value)
         }
 
-        fun setDynamicSystemSideGainHigh(value: Int) {
+        fun setDynamicSystemSideGainHigh(value: Float) {
             applyPref(Effects.dynamicSystem.presetId, null)
             applyPref(Effects.dynamicSystem.sideGainHigh, value)
         }
@@ -608,11 +636,11 @@ class MainViewModel
                     (cur.freqs.getOrElse(cur.bandCount - 1) { 1000 } * 2).coerceAtMost(20000)
                 }
             applyPref(Effects.dynamicEq.freqs, cur.freqs.resized(newCount) { newFreq })
-            applyPref(Effects.dynamicEq.qs, cur.qs.resized(newCount) { 150 })
-            applyPref(Effects.dynamicEq.gains, cur.gains.resized(newCount) { 0 })
-            applyPref(Effects.dynamicEq.thresholds, cur.thresholds.resized(newCount) { -300 })
-            applyPref(Effects.dynamicEq.attacks, cur.attacks.resized(newCount) { 10 })
-            applyPref(Effects.dynamicEq.releases, cur.releases.resized(newCount) { 100 })
+            applyPref(Effects.dynamicEq.qs, cur.qs.resized(newCount) { 1.5f })
+            applyPref(Effects.dynamicEq.gains, cur.gains.resized(newCount) { 0.0f })
+            applyPref(Effects.dynamicEq.thresholds, cur.thresholds.resized(newCount) { -30.0f })
+            applyPref(Effects.dynamicEq.attacks, cur.attacks.resized(newCount) { 10.0f })
+            applyPref(Effects.dynamicEq.releases, cur.releases.resized(newCount) { 100.0f })
             applyPref(Effects.dynamicEq.filterTypes, cur.filterTypes.resized(newCount) { 0 })
             applyPref(Effects.dynamicEq.bandCount, newCount)
         }
@@ -624,7 +652,7 @@ class MainViewModel
             if (index !in 0 until cur.bandCount) return
             val newCount = cur.bandCount - 1
 
-            fun List<Int>.removeBand(): List<Int> = take(cur.bandCount).filterIndexed { idx, _ -> idx != index }
+            fun <T> List<T>.removeBand(): List<T> = take(cur.bandCount).filterIndexed { idx, _ -> idx != index }
 
             applyPref(Effects.dynamicEq.bandCount, newCount)
             applyPref(Effects.dynamicEq.freqs, cur.freqs.removeBand())
@@ -677,6 +705,9 @@ class MainViewModel
                 val intPrefs =
                     listOf(
                         mbc.crossovers,
+                    )
+                val floatPrefs =
+                    listOf(
                         mbc.thresholds,
                         mbc.ratios,
                         mbc.gains,
@@ -705,6 +736,13 @@ class MainViewModel
                     for (band in 0 until count) {
                         i++
                         applyBandPref(pref, band, values.getOrElse(band) { 0 }, count)
+                    }
+                }
+                for (pref in floatPrefs) {
+                    val values = pref.get(uiState.value)
+                    for (band in 0 until count) {
+                        i++
+                        applyBandPref(pref, band, values.getOrElse(band) { 0.0f }, count)
                     }
                 }
                 for (pref in boolPrefs) {
@@ -751,18 +789,28 @@ class MainViewModel
             if (enabled) {
                 val count = uiState.value.dynamicEq.bandCount
                 applyPref(Effects.dynamicEq.bandCount, count)
-                val bandPrefs =
+                val intPrefs =
                     listOf(
                         Effects.dynamicEq.freqs,
+                        Effects.dynamicEq.filterTypes,
+                    )
+                val floatPrefs =
+                    listOf(
                         Effects.dynamicEq.qs,
                         Effects.dynamicEq.gains,
                         Effects.dynamicEq.thresholds,
                         Effects.dynamicEq.attacks,
                         Effects.dynamicEq.releases,
-                        Effects.dynamicEq.filterTypes,
                     )
                 var i = 0
-                for (pref in bandPrefs) {
+                for (pref in intPrefs) {
+                    val values = pref.get(uiState.value)
+                    for (band in 0 until count) {
+                        i++
+                        applyBandPref(pref, band, values[band], count)
+                    }
+                }
+                for (pref in floatPrefs) {
                     val values = pref.get(uiState.value)
                     for (band in 0 until count) {
                         i++

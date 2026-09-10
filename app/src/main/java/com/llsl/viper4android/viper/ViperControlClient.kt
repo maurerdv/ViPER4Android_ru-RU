@@ -130,52 +130,52 @@ object ViperControlClient {
     fun dispatchParam(
         param: Int,
         value: Int,
-    ): Boolean {
-        val bytes =
-            ByteBuffer
-                .allocate(4)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .putInt(value)
-                .array()
-        return dispatchBytes(param, bytes)
-    }
+    ): Boolean = dispatchBytes(param, ViperParamPayload.int(value))
 
     fun dispatchParam(
         param: Int,
-        val1: Int,
-        val2: Int,
-    ): Boolean {
-        val bytes =
-            ByteBuffer
-                .allocate(8)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .putInt(val1)
-                .putInt(val2)
-                .array()
-        return dispatchBytes(param, bytes)
-    }
+        value: Boolean,
+    ): Boolean = dispatchBytes(param, ViperParamPayload.bool(value))
+
+    fun dispatchParam(
+        param: Int,
+        value: Float,
+    ): Boolean = dispatchBytes(param, ViperParamPayload.float(value))
+
+    fun dispatchParam(
+        param: Int,
+        index: Int,
+        value: Int,
+    ): Boolean = dispatchBytes(param, ViperParamPayload.int(value, index))
+
+    fun dispatchParam(
+        param: Int,
+        index: Int,
+        value: Boolean,
+    ): Boolean = dispatchBytes(param, ViperParamPayload.bool(value, index))
+
+    fun dispatchParam(
+        param: Int,
+        index: Int,
+        value: Float,
+    ): Boolean = dispatchBytes(param, ViperParamPayload.float(value, index))
 
     fun dispatchParam(
         param: Int,
         val1: Int,
         val2: Int,
         val3: Int,
-    ): Boolean {
-        val bytes =
-            ByteBuffer
-                .allocate(12)
-                .order(ByteOrder.LITTLE_ENDIAN)
-                .putInt(val1)
-                .putInt(val2)
-                .putInt(val3)
-                .array()
-        return dispatchBytes(param, bytes)
-    }
+    ): Boolean = dispatchBytes(param, ViperParamPayload.intArray(intArrayOf(val1, val2, val3)))
 
     fun dispatchParam(
         param: Int,
         value: ByteArray,
-    ): Boolean = dispatchBytes(param, value)
+    ): Boolean = dispatchBytes(param, ViperParamPayload.bytes(value))
+
+    fun dispatchParam(
+        param: Int,
+        value: FloatArray,
+    ): Boolean = dispatchBytes(param, ViperParamPayload.floatArray(value))
 
     fun getStatus(): DriverStatus? {
         val binder = service() ?: return null

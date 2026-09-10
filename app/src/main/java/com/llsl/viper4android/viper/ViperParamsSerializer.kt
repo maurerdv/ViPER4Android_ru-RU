@@ -18,7 +18,6 @@ import com.llsl.viper4android.effect.HeadphoneSurroundState
 import com.llsl.viper4android.effect.LufsState
 import com.llsl.viper4android.effect.MultibandCompressorState
 import com.llsl.viper4android.effect.OutputState
-import com.llsl.viper4android.effect.ParamRaw
 import com.llsl.viper4android.effect.PlaybackGainControlState
 import com.llsl.viper4android.effect.PsychoacousticBassState
 import com.llsl.viper4android.effect.ReverbState
@@ -150,9 +149,9 @@ object ViperParamsSerializer {
         s: OutputState,
     ) {
         val l = ViperParamsLayout.MasterLimiter
-        buf.putFloat(base + l.THRESHOLD, s.limiter / 100f)
-        buf.putFloat(base + l.OUTPUT_VOLUME, s.volume / 100f)
-        buf.putFloat(base + l.CHANNEL_PAN, s.channelPan / 100f)
+        buf.putFloat(base + l.THRESHOLD, s.limiter)
+        buf.putFloat(base + l.OUTPUT_VOLUME, s.volume)
+        buf.putFloat(base + l.CHANNEL_PAN, s.channelPan)
     }
 
     private fun writePlaybackGainControl(
@@ -162,9 +161,9 @@ object ViperParamsSerializer {
     ) {
         val l = ViperParamsLayout.PlaybackGainControl
         buf.putBool(base + l.ENABLE, s.enable)
-        buf.putFloat(base + l.STRENGTH, s.strength / 100f)
-        buf.putFloat(base + l.MAX_GAIN, s.maxGain / 100f)
-        buf.putFloat(base + l.OUTPUT_THRESHOLD, s.outputThreshold / 100f)
+        buf.putFloat(base + l.STRENGTH, s.strength)
+        buf.putFloat(base + l.MAX_GAIN, s.maxGain)
+        buf.putFloat(base + l.OUTPUT_THRESHOLD, s.outputThreshold)
     }
 
     private fun writeLufs(
@@ -174,8 +173,8 @@ object ViperParamsSerializer {
     ) {
         val l = ViperParamsLayout.Lufs
         buf.putBool(base + l.ENABLE, s.enable)
-        buf.putFloat(base + l.TARGET, s.target / -10f)
-        buf.putFloat(base + l.MAX_GAIN, s.maxGain / 10f)
+        buf.putFloat(base + l.TARGET, s.target)
+        buf.putFloat(base + l.MAX_GAIN, s.maxGain)
         buf.putInt(base + l.SPEED, s.speed)
     }
 
@@ -186,21 +185,21 @@ object ViperParamsSerializer {
     ) {
         val l = ViperParamsLayout.FetCompressor
         buf.putBool(base + l.ENABLE, s.enable)
-        buf.putFloat(base + l.THRESHOLD, ParamRaw.fetCompressorThresholdF(s.threshold))
-        buf.putFloat(base + l.RATIO, s.ratio / 100f)
-        buf.putFloat(base + l.KNEE, ParamRaw.fetCompressorKneeF(s.knee))
+        buf.putFloat(base + l.THRESHOLD, s.threshold)
+        buf.putFloat(base + l.RATIO, s.ratio)
+        buf.putFloat(base + l.KNEE, s.knee)
         buf.putBool(base + l.KNEE_AUTO, s.kneeAuto)
-        buf.putFloat(base + l.GAIN, ParamRaw.fetCompressorGainF(s.gain))
+        buf.putFloat(base + l.GAIN, s.gain)
         buf.putBool(base + l.GAIN_AUTO, s.gainAuto)
-        buf.putFloat(base + l.ATTACK, ParamRaw.fetCompressorAttackMsF(s.attack))
+        buf.putFloat(base + l.ATTACK, s.attack)
         buf.putBool(base + l.ATTACK_AUTO, s.attackAuto)
-        buf.putFloat(base + l.RELEASE, ParamRaw.fetCompressorReleaseMsF(s.release))
+        buf.putFloat(base + l.RELEASE, s.release)
         buf.putBool(base + l.RELEASE_AUTO, s.releaseAuto)
-        buf.putFloat(base + l.KNEE_MULTI, s.kneeMulti / 100f)
-        buf.putFloat(base + l.MAX_ATTACK, ParamRaw.fetCompressorAttackMsF(s.maxAttack))
-        buf.putFloat(base + l.MAX_RELEASE, ParamRaw.fetCompressorReleaseMsF(s.maxRelease))
-        buf.putFloat(base + l.CREST, s.crest / 100f)
-        buf.putFloat(base + l.ADAPT, s.adapt / 100f)
+        buf.putFloat(base + l.KNEE_MULTI, s.kneeMulti)
+        buf.putFloat(base + l.MAX_ATTACK, s.maxAttack)
+        buf.putFloat(base + l.MAX_RELEASE, s.maxRelease)
+        buf.putFloat(base + l.CREST, s.crest)
+        buf.putFloat(base + l.ADAPT, s.adapt)
         buf.putBool(base + l.NO_CLIP, s.noClip)
     }
 
@@ -212,8 +211,8 @@ object ViperParamsSerializer {
         val l = ViperParamsLayout.Bass
         buf.putBool(base + l.ENABLE, s.enable)
         buf.putInt(base + l.MODE, s.mode)
-        buf.putInt(base + l.FREQUENCY, ParamRaw.bassFrequency(s.frequency))
-        buf.putFloat(base + l.GAIN, s.gain / 100f)
+        buf.putInt(base + l.FREQUENCY, s.frequency)
+        buf.putFloat(base + l.GAIN, s.gain)
         buf.putBool(base + l.ANTI_POP, s.antiPop)
     }
 
@@ -225,8 +224,8 @@ object ViperParamsSerializer {
         val l = ViperParamsLayout.BassMono
         buf.putBool(base + l.ENABLE, s.enable)
         buf.putInt(base + l.MODE, s.mode)
-        buf.putInt(base + l.FREQUENCY, ParamRaw.bassFrequency(s.frequency))
-        buf.putFloat(base + l.GAIN, s.gain / 100f)
+        buf.putInt(base + l.FREQUENCY, s.frequency)
+        buf.putFloat(base + l.GAIN, s.gain)
         buf.putBool(base + l.ANTI_POP, s.antiPop)
     }
 
@@ -238,9 +237,9 @@ object ViperParamsSerializer {
         val l = ViperParamsLayout.PsychoacousticBass
         buf.putBool(base + l.ENABLE, s.enable)
         buf.putInt(base + l.CUTOFF, s.cutoff)
-        buf.putInt(base + l.INTENSITY, s.intensity)
+        buf.putFloat(base + l.INTENSITY, s.intensity)
         buf.putInt(base + l.HARMONIC_ORDER, s.harmonicOrder)
-        buf.putInt(base + l.ORIGINAL_LEVEL, s.originalLevel)
+        buf.putFloat(base + l.ORIGINAL_LEVEL, s.originalLevel)
     }
 
     private fun writeSpectrumExtension(
@@ -251,7 +250,7 @@ object ViperParamsSerializer {
         val l = ViperParamsLayout.SpectrumExtension
         buf.putBool(base + l.ENABLE, s.enable)
         buf.putInt(base + l.STRENGTH, s.strength)
-        buf.putFloat(base + l.EXCITER, ParamRaw.spectrumExtensionExciterF(s.exciter))
+        buf.putFloat(base + l.EXCITER, s.exciter)
     }
 
     private fun writeEqualizer(
@@ -276,7 +275,7 @@ object ViperParamsSerializer {
     ) {
         val l = ViperParamsLayout.Convolver
         buf.putBool(base + l.ENABLE, s.enable)
-        buf.putFloat(base + l.CROSS_CHANNEL, s.crossChannel / 100f)
+        buf.putFloat(base + l.CROSS_CHANNEL, s.crossChannel)
     }
 
     private fun writeDdc(
@@ -295,9 +294,9 @@ object ViperParamsSerializer {
     ) {
         val l = ViperParamsLayout.FieldSurround
         buf.putBool(base + l.ENABLE, s.enable)
-        buf.putFloat(base + l.WIDENING, s.widening.toFloat())
-        buf.putFloat(base + l.MID_IMAGE, ParamRaw.fieldSurroundMidImage(s.midImage) / 100f)
-        buf.putShort(base + l.DEPTH, ParamRaw.fieldSurroundDepth(s.depth).toShort())
+        buf.putFloat(base + l.WIDENING, s.widening)
+        buf.putFloat(base + l.MID_IMAGE, s.midImage)
+        buf.putShort(base + l.DEPTH, s.depth.toShort())
     }
 
     private fun writeDiffSurround(
@@ -307,9 +306,9 @@ object ViperParamsSerializer {
     ) {
         val l = ViperParamsLayout.DiffSurround
         buf.putBool(base + l.ENABLE, s.enable)
-        buf.putFloat(base + l.DELAY, s.delay.toFloat())
+        buf.putFloat(base + l.DELAY, s.delay)
         buf.putBool(base + l.REVERSE, s.reverse)
-        buf.putFloat(base + l.WET_DRY_MIX, s.wetDryMix / 100f)
+        buf.putFloat(base + l.WET_DRY_MIX, s.wetDryMix)
         buf.putFloat(base + l.LP_CUTOFF, s.lpCutoff.toFloat())
     }
 
@@ -320,9 +319,9 @@ object ViperParamsSerializer {
     ) {
         val l = ViperParamsLayout.StereoImager
         buf.putBool(base + l.ENABLE, s.enable)
-        buf.putFloat(base + l.LOW_WIDTH, s.lowWidth.toFloat())
-        buf.putFloat(base + l.MID_WIDTH, s.midWidth.toFloat())
-        buf.putFloat(base + l.HIGH_WIDTH, s.highWidth.toFloat())
+        buf.putFloat(base + l.LOW_WIDTH, s.lowWidth)
+        buf.putFloat(base + l.MID_WIDTH, s.midWidth)
+        buf.putFloat(base + l.HIGH_WIDTH, s.highWidth)
         buf.putFloat(base + l.LOW_CROSSOVER, s.lowCrossover.toFloat())
         buf.putFloat(base + l.HIGH_CROSSOVER, s.highCrossover.toFloat())
     }
@@ -344,11 +343,11 @@ object ViperParamsSerializer {
     ) {
         val l = ViperParamsLayout.Reverb
         buf.putBool(base + l.ENABLE, s.enable)
-        buf.putFloat(base + l.ROOM_SIZE, ParamRaw.reverbRoomSize(s.roomSize) / 100f)
-        buf.putFloat(base + l.WIDTH, ParamRaw.reverbWidth(s.width) / 100f)
-        buf.putFloat(base + l.DAMP, ParamRaw.reverbDamp(s.damp) / 100f)
-        buf.putFloat(base + l.WET, s.wet / 100f)
-        buf.putFloat(base + l.DRY, s.dry / 100f)
+        buf.putFloat(base + l.ROOM_SIZE, s.roomSize)
+        buf.putFloat(base + l.WIDTH, s.width)
+        buf.putFloat(base + l.DAMP, s.damp)
+        buf.putFloat(base + l.WET, s.wet)
+        buf.putFloat(base + l.DRY, s.dry)
     }
 
     private fun writeDynamicSystem(
@@ -362,9 +361,9 @@ object ViperParamsSerializer {
         buf.putInt(base + l.X_COEFF_HIGH, s.xHigh)
         buf.putInt(base + l.Y_COEFF_LOW, s.yLow)
         buf.putInt(base + l.Y_COEFF_HIGH, s.yHigh)
-        buf.putFloat(base + l.SIDE_GAIN_LOW, s.sideGainLow / 100f)
-        buf.putFloat(base + l.SIDE_GAIN_HIGH, s.sideGainHigh / 100f)
-        buf.putFloat(base + l.STRENGTH, ParamRaw.dynamicSystemStrength(s.strength) / 100f)
+        buf.putFloat(base + l.SIDE_GAIN_LOW, s.sideGainLow)
+        buf.putFloat(base + l.SIDE_GAIN_HIGH, s.sideGainHigh)
+        buf.putFloat(base + l.STRENGTH, s.strength)
     }
 
     private fun writeClarity(
@@ -375,7 +374,7 @@ object ViperParamsSerializer {
         val l = ViperParamsLayout.Clarity
         buf.putBool(base + l.ENABLE, s.enable)
         buf.putInt(base + l.MODE, s.mode)
-        buf.putFloat(base + l.GAIN, s.gain / 100f)
+        buf.putFloat(base + l.GAIN, s.gain)
     }
 
     private fun writeCure(
@@ -455,21 +454,21 @@ object ViperParamsSerializer {
         for (i in 0 until bandCount) {
             val bandBase = base + l.BANDS + i * lb.SIZE
             buf.putBool(bandBase + lb.ENABLE, bandEnables.getOrFalse(i))
-            buf.putFloat(bandBase + lb.THRESHOLD, ParamRaw.fetCompressorThresholdF(thresholds.getOrZero(i)))
-            buf.putFloat(bandBase + lb.RATIO, ratios.getOrZero(i) / 100f)
-            buf.putFloat(bandBase + lb.KNEE, ParamRaw.fetCompressorKneeF(knees.getOrZero(i)))
+            buf.putFloat(bandBase + lb.THRESHOLD, thresholds.getOrZero(i))
+            buf.putFloat(bandBase + lb.RATIO, ratios.getOrZero(i))
+            buf.putFloat(bandBase + lb.KNEE, knees.getOrZero(i))
             buf.putBool(bandBase + lb.KNEE_AUTO, kneeAutos.getOrFalse(i))
-            buf.putFloat(bandBase + lb.GAIN, ParamRaw.fetCompressorGainF(gains.getOrZero(i)))
+            buf.putFloat(bandBase + lb.GAIN, gains.getOrZero(i))
             buf.putBool(bandBase + lb.GAIN_AUTO, gainAutos.getOrFalse(i))
-            buf.putFloat(bandBase + lb.ATTACK, ParamRaw.fetCompressorAttackMsF(attacks.getOrZero(i)))
+            buf.putFloat(bandBase + lb.ATTACK, attacks.getOrZero(i))
             buf.putBool(bandBase + lb.ATTACK_AUTO, attackAutos.getOrFalse(i))
-            buf.putFloat(bandBase + lb.RELEASE, ParamRaw.fetCompressorReleaseMsF(releases.getOrZero(i)))
+            buf.putFloat(bandBase + lb.RELEASE, releases.getOrZero(i))
             buf.putBool(bandBase + lb.RELEASE_AUTO, releaseAutos.getOrFalse(i))
-            buf.putFloat(bandBase + lb.KNEE_MULTI, kneeMultis.getOrZero(i) / 100f)
-            buf.putFloat(bandBase + lb.MAX_ATTACK, ParamRaw.fetCompressorAttackMsF(maxAttacks.getOrZero(i)))
-            buf.putFloat(bandBase + lb.MAX_RELEASE, ParamRaw.fetCompressorReleaseMsF(maxReleases.getOrZero(i)))
-            buf.putFloat(bandBase + lb.CREST, ParamRaw.fetCompressorReleaseMsF(crests.getOrZero(i)))
-            buf.putFloat(bandBase + lb.ADAPT, adapts.getOrZero(i) / 100f)
+            buf.putFloat(bandBase + lb.KNEE_MULTI, kneeMultis.getOrZero(i))
+            buf.putFloat(bandBase + lb.MAX_ATTACK, maxAttacks.getOrZero(i))
+            buf.putFloat(bandBase + lb.MAX_RELEASE, maxReleases.getOrZero(i))
+            buf.putFloat(bandBase + lb.CREST, crests.getOrZero(i))
+            buf.putFloat(bandBase + lb.ADAPT, adapts.getOrZero(i))
             buf.putBool(bandBase + lb.NO_CLIP, noClips.getOrFalse(i))
         }
     }
@@ -497,16 +496,18 @@ object ViperParamsSerializer {
         for (i in 0 until bandCount) {
             val bandBase = base + l.BANDS + i * lb.SIZE
             buf.putFloat(bandBase + lb.FREQUENCY, freqs.getOrZero(i).toFloat())
-            buf.putFloat(bandBase + lb.Q, qs.getOrZero(i) / 100f)
-            buf.putFloat(bandBase + lb.GAIN, gains.getOrZero(i) / 10f)
-            buf.putFloat(bandBase + lb.THRESHOLD, thresholds.getOrZero(i) / 10f)
-            buf.putFloat(bandBase + lb.ATTACK, attacks.getOrZero(i).toFloat())
-            buf.putFloat(bandBase + lb.RELEASE, releases.getOrZero(i).toFloat())
+            buf.putFloat(bandBase + lb.Q, qs.getOrZero(i))
+            buf.putFloat(bandBase + lb.GAIN, gains.getOrZero(i))
+            buf.putFloat(bandBase + lb.THRESHOLD, thresholds.getOrZero(i))
+            buf.putFloat(bandBase + lb.ATTACK, attacks.getOrZero(i))
+            buf.putFloat(bandBase + lb.RELEASE, releases.getOrZero(i))
             buf.putInt(bandBase + lb.FILTER_TYPE, filterTypes.getOrZero(i))
         }
     }
 
     private fun List<Int>.getOrZero(i: Int): Int = if (i in indices) this[i] else 0
+
+    private fun List<Float>.getOrZero(i: Int): Float = if (i in indices) this[i] else 0.0f
 
     private fun List<Boolean>.getOrFalse(i: Int): Boolean = if (i in indices) this[i] else false
 }

@@ -3,7 +3,10 @@ package com.llsl.viper4android.viper
 import com.llsl.viper4android.R
 import com.llsl.viper4android.data.repository.ViperRepository
 import com.llsl.viper4android.effect.EffectState
-import com.llsl.viper4android.effect.ParamRaw
+import com.llsl.viper4android.effect.compressorAdaptAmountToSeconds
+import com.llsl.viper4android.effect.compressorDbToRaw
+import com.llsl.viper4android.effect.compressorMsToSeconds
+import com.llsl.viper4android.effect.compressorRatioToRaw
 import com.llsl.viper4android.effect.loadEffectPrefs
 import com.llsl.viper4android.utils.FileLogger
 import java.nio.ByteBuffer
@@ -130,8 +133,8 @@ object ViperDispatcher {
         val xHigh: Int,
         val yLow: Int,
         val yHigh: Int,
-        val sideGainLow: Int,
-        val sideGainHigh: Int,
+        val sideGainLow: Float,
+        val sideGainHigh: Float,
     )
 
     val BUILTIN_DS_PRESETS: List<BuiltinDsPreset> =
@@ -143,8 +146,8 @@ object ViperDispatcher {
                 xHigh = 6200,
                 yLow = 40,
                 yHigh = 60,
-                sideGainLow = 10,
-                sideGainHigh = 80,
+                sideGainLow = 0.10f,
+                sideGainHigh = 0.80f,
             ),
             BuiltinDsPreset(
                 key = "ds_device_high_end_headphone_v2",
@@ -153,8 +156,8 @@ object ViperDispatcher {
                 xHigh = 5800,
                 yLow = 55,
                 yHigh = 80,
-                sideGainLow = 10,
-                sideGainHigh = 70,
+                sideGainLow = 0.10f,
+                sideGainHigh = 0.70f,
             ),
             BuiltinDsPreset(
                 key = "ds_device_common_headphone_v2",
@@ -163,8 +166,8 @@ object ViperDispatcher {
                 xHigh = 5600,
                 yLow = 60,
                 yHigh = 105,
-                sideGainLow = 10,
-                sideGainHigh = 50,
+                sideGainLow = 0.10f,
+                sideGainHigh = 0.50f,
             ),
             BuiltinDsPreset(
                 key = "ds_device_low_end_headphone_v2",
@@ -173,8 +176,8 @@ object ViperDispatcher {
                 xHigh = 5400,
                 yLow = 60,
                 yHigh = 105,
-                sideGainLow = 10,
-                sideGainHigh = 20,
+                sideGainLow = 0.10f,
+                sideGainHigh = 0.20f,
             ),
             BuiltinDsPreset(
                 key = "ds_device_common_earphone_v2",
@@ -183,8 +186,8 @@ object ViperDispatcher {
                 xHigh = 5600,
                 yLow = 40,
                 yHigh = 80,
-                sideGainLow = 50,
-                sideGainHigh = 50,
+                sideGainLow = 0.50f,
+                sideGainHigh = 0.50f,
             ),
             BuiltinDsPreset(
                 key = "ds_device_extreme_headphone_v1",
@@ -193,8 +196,8 @@ object ViperDispatcher {
                 xHigh = 6200,
                 yLow = 40,
                 yHigh = 80,
-                sideGainLow = 0,
-                sideGainHigh = 20,
+                sideGainLow = 0.0f,
+                sideGainHigh = 0.20f,
             ),
             BuiltinDsPreset(
                 key = "ds_device_high_end_headphone_v1",
@@ -203,8 +206,8 @@ object ViperDispatcher {
                 xHigh = 6200,
                 yLow = 40,
                 yHigh = 80,
-                sideGainLow = 0,
-                sideGainHigh = 10,
+                sideGainLow = 0.0f,
+                sideGainHigh = 0.10f,
             ),
             BuiltinDsPreset(
                 key = "ds_device_common_headphone_v1",
@@ -213,8 +216,8 @@ object ViperDispatcher {
                 xHigh = 6200,
                 yLow = 40,
                 yHigh = 80,
-                sideGainLow = 10,
-                sideGainHigh = 0,
+                sideGainLow = 0.10f,
+                sideGainHigh = 0.0f,
             ),
             BuiltinDsPreset(
                 key = "ds_device_common_earphone_v1",
@@ -223,8 +226,8 @@ object ViperDispatcher {
                 xHigh = 6200,
                 yLow = 40,
                 yHigh = 80,
-                sideGainLow = 10,
-                sideGainHigh = 0,
+                sideGainLow = 0.10f,
+                sideGainHigh = 0.0f,
             ),
         )
 
@@ -467,7 +470,7 @@ object ViperDispatcher {
         effect.setParameter(ViperParams.PARAM_MASTER_LIMITER_THRESHOLD, state.out.limiter)
 
         // AGC
-        effect.setParameter(ViperParams.PARAM_PLAYBACK_GAIN_CONTROL_ENABLE, if (state.playbackGainControl.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_PLAYBACK_GAIN_CONTROL_ENABLE, state.playbackGainControl.enable)
         if (state.playbackGainControl.enable) {
             effect.setParameter(ViperParams.PARAM_PLAYBACK_GAIN_CONTROL_STRENGTH, state.playbackGainControl.strength)
             effect.setParameter(ViperParams.PARAM_PLAYBACK_GAIN_CONTROL_MAX_GAIN, state.playbackGainControl.maxGain)
@@ -475,7 +478,7 @@ object ViperDispatcher {
         }
 
         // LUFS
-        effect.setParameter(ViperParams.PARAM_LUFS_ENABLE, if (state.lufs.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_LUFS_ENABLE, state.lufs.enable)
         if (state.lufs.enable) {
             effect.setParameter(ViperParams.PARAM_LUFS_TARGET, state.lufs.target)
             effect.setParameter(ViperParams.PARAM_LUFS_MAX_GAIN, state.lufs.maxGain)
@@ -483,31 +486,28 @@ object ViperDispatcher {
         }
 
         // FET Compressor
-        effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_ENABLE, if (state.fetCompressor.enable) 100 else 0)
+        effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_ENABLE, state.fetCompressor.enable)
         if (state.fetCompressor.enable) {
-            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_THRESHOLD, ParamRaw.fetCompressorThreshold(state.fetCompressor.threshold))
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_THRESHOLD, state.fetCompressor.threshold)
             effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_RATIO, state.fetCompressor.ratio)
-            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_KNEE_AUTO, if (state.fetCompressor.kneeAuto) 100 else 0)
-            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_KNEE, ParamRaw.fetCompressorKnee(state.fetCompressor.knee))
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_KNEE_AUTO, state.fetCompressor.kneeAuto)
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_KNEE, state.fetCompressor.knee)
             effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_KNEE_MULTI, state.fetCompressor.kneeMulti)
-            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_GAIN_AUTO, if (state.fetCompressor.gainAuto) 100 else 0)
-            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_GAIN, ParamRaw.fetCompressorGain(state.fetCompressor.gain))
-            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_ATTACK_AUTO, if (state.fetCompressor.attackAuto) 100 else 0)
-            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_ATTACK, ParamRaw.fetCompressorAttackMs(state.fetCompressor.attack))
-            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_MAX_ATTACK, ParamRaw.fetCompressorAttackMs(state.fetCompressor.maxAttack))
-            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_RELEASE_AUTO, if (state.fetCompressor.releaseAuto) 100 else 0)
-            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_RELEASE, ParamRaw.fetCompressorReleaseMs(state.fetCompressor.release))
-            effect.setParameter(
-                ViperParams.PARAM_FET_COMPRESSOR_MAX_RELEASE,
-                ParamRaw.fetCompressorReleaseMs(state.fetCompressor.maxRelease),
-            )
-            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_CREST, ParamRaw.fetCompressorReleaseMs(state.fetCompressor.crest))
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_GAIN_AUTO, state.fetCompressor.gainAuto)
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_GAIN, state.fetCompressor.gain)
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_ATTACK_AUTO, state.fetCompressor.attackAuto)
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_ATTACK, state.fetCompressor.attack)
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_MAX_ATTACK, state.fetCompressor.maxAttack)
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_RELEASE_AUTO, state.fetCompressor.releaseAuto)
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_RELEASE, state.fetCompressor.release)
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_MAX_RELEASE, state.fetCompressor.maxRelease)
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_CREST, state.fetCompressor.crest)
             effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_ADAPT, state.fetCompressor.adapt)
-            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_NO_CLIP, if (state.fetCompressor.noClip) 100 else 0)
+            effect.setParameter(ViperParams.PARAM_FET_COMPRESSOR_NO_CLIP, state.fetCompressor.noClip)
         }
 
         // Multiband Compressor
-        effect.setParameter(ViperParams.PARAM_MULTIBAND_COMPRESSOR_ENABLE, if (state.multibandCompressor.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_MULTIBAND_COMPRESSOR_ENABLE, state.multibandCompressor.enable)
         if (state.multibandCompressor.enable) {
             effect.setParameter(ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_COUNT, 5)
             val mbc = state.multibandCompressor
@@ -521,140 +521,140 @@ object ViperDispatcher {
             }
             for (b in 0 until 5) {
                 val bandEnabled = mbc.bandEnables.getOrElse(b) { true }
-                effect.setParameter(ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_ENABLE, b, if (bandEnabled) 100 else 0)
+                effect.setParameter(ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_ENABLE, b, bandEnabled)
                 effect.setParameter(
                     ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_THRESHOLD,
                     b,
-                    ParamRaw.fetCompressorThreshold(mbc.thresholds.getOrElse(b) { -18 }),
+                    mbc.thresholds.getOrElse(b) { compressorDbToRaw(-18.0f) },
                 )
-                effect.setParameter(ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_RATIO, b, mbc.ratios.getOrElse(b) { 50 })
                 effect.setParameter(
-                    ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_GAIN,
+                    ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_RATIO,
                     b,
-                    ParamRaw.fetCompressorGain(mbc.gains.getOrElse(b) { 0 }),
+                    mbc.ratios.getOrElse(b) { compressorRatioToRaw(0.5f) },
                 )
+                effect.setParameter(ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_GAIN, b, mbc.gains.getOrElse(b) { 0.0f })
                 effect.setParameter(
                     ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_ATTACK,
                     b,
-                    ParamRaw.fetCompressorAttackMs(mbc.attacks.getOrElse(b) { 1 }),
+                    mbc.attacks.getOrElse(b) { compressorMsToSeconds(1.0f) },
                 )
                 effect.setParameter(
                     ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_RELEASE,
                     b,
-                    ParamRaw.fetCompressorReleaseMs(mbc.releases.getOrElse(b) { 100 }),
+                    mbc.releases.getOrElse(b) { compressorMsToSeconds(100.0f) },
                 )
-                effect.setParameter(
-                    ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_KNEE,
-                    b,
-                    ParamRaw.fetCompressorKnee(mbc.knees.getOrElse(b) { 0 }),
-                )
+                effect.setParameter(ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_KNEE, b, mbc.knees.getOrElse(b) { 0.0f })
                 effect.setParameter(
                     ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_GAIN_AUTO,
                     b,
-                    if (mbc.gainAutos.getOrElse(b) { true }) 100 else 0,
+                    mbc.gainAutos.getOrElse(b) { true },
                 )
                 effect.setParameter(
                     ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_ATTACK_AUTO,
                     b,
-                    if (mbc.attackAutos.getOrElse(b) { true }) 100 else 0,
+                    mbc.attackAutos.getOrElse(b) { true },
                 )
                 effect.setParameter(
                     ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_RELEASE_AUTO,
                     b,
-                    if (mbc.releaseAutos.getOrElse(b) { true }) 100 else 0,
+                    mbc.releaseAutos.getOrElse(b) { true },
                 )
                 effect.setParameter(
                     ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_KNEE_AUTO,
                     b,
-                    if (mbc.kneeAutos.getOrElse(b) { true }) 100 else 0,
+                    mbc.kneeAutos.getOrElse(b) { true },
                 )
-                effect.setParameter(ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_KNEE_MULTI, b, mbc.kneeMultis.getOrElse(b) { 0 })
+                effect.setParameter(ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_KNEE_MULTI, b, mbc.kneeMultis.getOrElse(b) { 0.0f })
                 effect.setParameter(
                     ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_MAX_ATTACK,
                     b,
-                    ParamRaw.fetCompressorAttackMs(mbc.maxAttacks.getOrElse(b) { 44 }),
+                    mbc.maxAttacks.getOrElse(b) { compressorMsToSeconds(44.0f) },
                 )
                 effect
                     .setParameter(
                         ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_MAX_RELEASE,
                         b,
-                        ParamRaw.fetCompressorReleaseMs(mbc.maxReleases.getOrElse(b) { 200 }),
+                        mbc.maxReleases.getOrElse(b) { compressorMsToSeconds(200.0f) },
                     )
                 effect.setParameter(
                     ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_CREST,
                     b,
-                    ParamRaw.fetCompressorReleaseMs(mbc.crests.getOrElse(b) { 100 }),
+                    mbc.crests.getOrElse(b) { compressorMsToSeconds(100.0f) },
                 )
-                effect.setParameter(ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_ADAPT, b, mbc.adapts.getOrElse(b) { 50 })
+                effect.setParameter(
+                    ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_ADAPT,
+                    b,
+                    mbc.adapts.getOrElse(b) { compressorAdaptAmountToSeconds(0.5f) },
+                )
                 effect.setParameter(
                     ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_NO_CLIP,
                     b,
-                    if (mbc.noClips.getOrElse(b) { true }) 100 else 0,
+                    mbc.noClips.getOrElse(b) { true },
                 )
             }
         }
 
         // DDC
-        effect.setParameter(ViperParams.PARAM_DDC_ENABLE, if (state.ddc.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_DDC_ENABLE, state.ddc.enable)
 
         // Spectrum Extension
-        effect.setParameter(ViperParams.PARAM_SPECTRUM_EXTENSION_ENABLE, if (state.spectrumExtension.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_SPECTRUM_EXTENSION_ENABLE, state.spectrumExtension.enable)
         if (state.spectrumExtension.enable) {
             effect.setParameter(ViperParams.PARAM_SPECTRUM_EXTENSION_STRENGTH, state.spectrumExtension.strength)
             effect.setParameter(
                 ViperParams.PARAM_SPECTRUM_EXTENSION_EXCITER,
-                ParamRaw.spectrumExtensionExciter(state.spectrumExtension.exciter),
+                state.spectrumExtension.exciter,
             )
         }
 
         // EQ
-        effect.setParameter(ViperParams.PARAM_EQUALIZER_ENABLE, if (state.eq.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_EQUALIZER_ENABLE, state.eq.enable)
         if (state.eq.enable) {
             effect.setParameter(ViperParams.PARAM_EQUALIZER_BAND_COUNT, state.eq.bandCount)
             effect.setParameter(ViperParams.PARAM_EQUALIZER_BAND_LEVELS, eqBandLevelsToBytes(state.eq.bands))
         }
 
         // Dynamic EQ
-        effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_ENABLE, if (state.dynamicEq.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_ENABLE, state.dynamicEq.enable)
         if (state.dynamicEq.enable) {
             val deq = state.dynamicEq
             for (b in 0 until deq.bandCount) {
                 effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_FREQUENCY, b, deq.freqs.getOrElse(b) { 1000 })
-                effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_Q, b, deq.qs.getOrElse(b) { 150 })
-                effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_GAIN, b, deq.gains.getOrElse(b) { 0 })
-                effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_THRESHOLD, b, deq.thresholds.getOrElse(b) { -300 })
-                effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_ATTACK, b, deq.attacks.getOrElse(b) { 10 })
-                effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_RELEASE, b, deq.releases.getOrElse(b) { 100 })
+                effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_Q, b, deq.qs.getOrElse(b) { 1.5f })
+                effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_GAIN, b, deq.gains.getOrElse(b) { 0.0f })
+                effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_THRESHOLD, b, deq.thresholds.getOrElse(b) { -30.0f })
+                effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_ATTACK, b, deq.attacks.getOrElse(b) { 10.0f })
+                effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_RELEASE, b, deq.releases.getOrElse(b) { 100.0f })
                 effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_FILTER_TYPE, b, deq.filterTypes.getOrElse(b) { 0 })
             }
             effect.setParameter(ViperParams.PARAM_DYNAMIC_EQ_BAND_COUNT, state.dynamicEq.bandCount)
         }
 
         // Convolver
-        effect.setParameter(ViperParams.PARAM_CONVOLVER_ENABLE, if (state.convolver.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_CONVOLVER_ENABLE, state.convolver.enable)
         if (state.convolver.enable) {
             effect.setParameter(ViperParams.PARAM_CONVOLVER_CROSS_CHANNEL, state.convolver.crossChannel)
         }
 
         // Field Surround
-        effect.setParameter(ViperParams.PARAM_FIELD_SURROUND_ENABLE, if (state.fieldSurround.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_FIELD_SURROUND_ENABLE, state.fieldSurround.enable)
         if (state.fieldSurround.enable) {
-            effect.setParameter(ViperParams.PARAM_FIELD_SURROUND_WIDENING, ParamRaw.fieldSurroundWidening(state.fieldSurround.widening))
-            effect.setParameter(ViperParams.PARAM_FIELD_SURROUND_MID_IMAGE, ParamRaw.fieldSurroundMidImage(state.fieldSurround.midImage))
-            effect.setParameter(ViperParams.PARAM_FIELD_SURROUND_DEPTH, ParamRaw.fieldSurroundDepth(state.fieldSurround.depth))
+            effect.setParameter(ViperParams.PARAM_FIELD_SURROUND_WIDENING, state.fieldSurround.widening)
+            effect.setParameter(ViperParams.PARAM_FIELD_SURROUND_MID_IMAGE, state.fieldSurround.midImage)
+            effect.setParameter(ViperParams.PARAM_FIELD_SURROUND_DEPTH, state.fieldSurround.depth)
         }
 
         // Diff Surround
-        effect.setParameter(ViperParams.PARAM_DIFF_SURROUND_ENABLE, if (state.diffSurround.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_DIFF_SURROUND_ENABLE, state.diffSurround.enable)
         if (state.diffSurround.enable) {
-            effect.setParameter(ViperParams.PARAM_DIFF_SURROUND_DELAY, ParamRaw.diffSurroundDelay(state.diffSurround.delay))
-            effect.setParameter(ViperParams.PARAM_DIFF_SURROUND_REVERSE, if (state.diffSurround.reverse) 1 else 0)
+            effect.setParameter(ViperParams.PARAM_DIFF_SURROUND_DELAY, state.diffSurround.delay)
+            effect.setParameter(ViperParams.PARAM_DIFF_SURROUND_REVERSE, state.diffSurround.reverse)
             effect.setParameter(ViperParams.PARAM_DIFF_SURROUND_WET_DRY_MIX, state.diffSurround.wetDryMix)
             effect.setParameter(ViperParams.PARAM_DIFF_SURROUND_LP_CUTOFF, state.diffSurround.lpCutoff)
         }
 
         // Stereo Imager
-        effect.setParameter(ViperParams.PARAM_STEREO_IMAGER_ENABLE, if (state.stereoImager.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_STEREO_IMAGER_ENABLE, state.stereoImager.enable)
         if (state.stereoImager.enable) {
             effect.setParameter(ViperParams.PARAM_STEREO_IMAGER_LOW_WIDTH, state.stereoImager.lowWidth)
             effect.setParameter(ViperParams.PARAM_STEREO_IMAGER_MID_WIDTH, state.stereoImager.midWidth)
@@ -664,25 +664,25 @@ object ViperDispatcher {
         }
 
         // Headphone Surround
-        effect.setParameter(ViperParams.PARAM_HEADPHONE_SURROUND_ENABLE, if (state.headphoneSurround.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_HEADPHONE_SURROUND_ENABLE, state.headphoneSurround.enable)
         if (state.headphoneSurround.enable) {
             effect.setParameter(ViperParams.PARAM_HEADPHONE_SURROUND_QUALITY, state.headphoneSurround.quality)
         }
 
         // Reverb
-        effect.setParameter(ViperParams.PARAM_REVERB_ENABLE, if (state.reverb.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_REVERB_ENABLE, state.reverb.enable)
         if (state.reverb.enable) {
-            effect.setParameter(ViperParams.PARAM_REVERB_ROOM_SIZE, ParamRaw.reverbRoomSize(state.reverb.roomSize))
-            effect.setParameter(ViperParams.PARAM_REVERB_WIDTH, ParamRaw.reverbWidth(state.reverb.width))
-            effect.setParameter(ViperParams.PARAM_REVERB_DAMP, ParamRaw.reverbDamp(state.reverb.damp))
+            effect.setParameter(ViperParams.PARAM_REVERB_ROOM_SIZE, state.reverb.roomSize)
+            effect.setParameter(ViperParams.PARAM_REVERB_WIDTH, state.reverb.width)
+            effect.setParameter(ViperParams.PARAM_REVERB_DAMP, state.reverb.damp)
             effect.setParameter(ViperParams.PARAM_REVERB_WET, state.reverb.wet)
             effect.setParameter(ViperParams.PARAM_REVERB_DRY, state.reverb.dry)
         }
 
         // Dynamic System
-        effect.setParameter(ViperParams.PARAM_DYNAMIC_SYSTEM_ENABLE, if (state.dynamicSystem.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_DYNAMIC_SYSTEM_ENABLE, state.dynamicSystem.enable)
         if (state.dynamicSystem.enable) {
-            effect.setParameter(ViperParams.PARAM_DYNAMIC_SYSTEM_STRENGTH, ParamRaw.dynamicSystemStrength(state.dynamicSystem.strength))
+            effect.setParameter(ViperParams.PARAM_DYNAMIC_SYSTEM_STRENGTH, state.dynamicSystem.strength)
             effect.setParameter(ViperParams.PARAM_DYNAMIC_SYSTEM_X_LOW, state.dynamicSystem.xLow)
             effect.setParameter(ViperParams.PARAM_DYNAMIC_SYSTEM_X_HIGH, state.dynamicSystem.xHigh)
             effect.setParameter(ViperParams.PARAM_DYNAMIC_SYSTEM_Y_LOW, state.dynamicSystem.yLow)
@@ -692,10 +692,10 @@ object ViperDispatcher {
         }
 
         // Tube Simulator
-        effect.setParameter(ViperParams.PARAM_TUBE_SIMULATOR_ENABLE, if (state.tubeSimulator.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_TUBE_SIMULATOR_ENABLE, state.tubeSimulator.enable)
 
         // Psycho Bass
-        effect.setParameter(ViperParams.PARAM_PSYCHOACOUSTIC_BASS_ENABLE, if (state.psychoacousticBass.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_PSYCHOACOUSTIC_BASS_ENABLE, state.psychoacousticBass.enable)
         if (state.psychoacousticBass.enable) {
             effect.setParameter(ViperParams.PARAM_PSYCHOACOUSTIC_BASS_CUTOFF, state.psychoacousticBass.cutoff)
             effect.setParameter(ViperParams.PARAM_PSYCHOACOUSTIC_BASS_INTENSITY, state.psychoacousticBass.intensity)
@@ -704,44 +704,44 @@ object ViperDispatcher {
         }
 
         // Bass
-        effect.setParameter(ViperParams.PARAM_BASS_ENABLE, if (state.bass.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_BASS_ENABLE, state.bass.enable)
         if (state.bass.enable) {
             effect.setParameter(ViperParams.PARAM_BASS_MODE, state.bass.mode)
-            effect.setParameter(ViperParams.PARAM_BASS_FREQUENCY, ParamRaw.bassFrequency(state.bass.frequency))
+            effect.setParameter(ViperParams.PARAM_BASS_FREQUENCY, state.bass.frequency)
             effect.setParameter(ViperParams.PARAM_BASS_GAIN, state.bass.gain)
-            effect.setParameter(ViperParams.PARAM_BASS_ANTI_POP, if (state.bass.antiPop) 1 else 0)
+            effect.setParameter(ViperParams.PARAM_BASS_ANTI_POP, state.bass.antiPop)
         }
 
         // Bass Mono
-        effect.setParameter(ViperParams.PARAM_BASS_MONO_ENABLE, if (state.bassMono.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_BASS_MONO_ENABLE, state.bassMono.enable)
         if (state.bassMono.enable) {
             effect.setParameter(ViperParams.PARAM_BASS_MONO_MODE, state.bassMono.mode)
-            effect.setParameter(ViperParams.PARAM_BASS_MONO_FREQUENCY, ParamRaw.bassFrequency(state.bassMono.frequency))
+            effect.setParameter(ViperParams.PARAM_BASS_MONO_FREQUENCY, state.bassMono.frequency)
             effect.setParameter(ViperParams.PARAM_BASS_MONO_GAIN, state.bassMono.gain)
-            effect.setParameter(ViperParams.PARAM_BASS_MONO_ANTI_POP, if (state.bassMono.antiPop) 1 else 0)
+            effect.setParameter(ViperParams.PARAM_BASS_MONO_ANTI_POP, state.bassMono.antiPop)
         }
 
         // Clarity
-        effect.setParameter(ViperParams.PARAM_CLARITY_ENABLE, if (state.clarity.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_CLARITY_ENABLE, state.clarity.enable)
         if (state.clarity.enable) {
             effect.setParameter(ViperParams.PARAM_CLARITY_MODE, state.clarity.mode)
             effect.setParameter(ViperParams.PARAM_CLARITY_GAIN, state.clarity.gain)
         }
 
         // Cure
-        effect.setParameter(ViperParams.PARAM_CURE_ENABLE, if (state.cure.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_CURE_ENABLE, state.cure.enable)
         if (state.cure.enable) {
             effect.setParameter(ViperParams.PARAM_CURE_CROSSFEED_PRESET, state.cure.crossfeedPreset)
         }
 
         // AnalogX
-        effect.setParameter(ViperParams.PARAM_ANALOG_X_ENABLE, if (state.analogX.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_ANALOG_X_ENABLE, state.analogX.enable)
         if (state.analogX.enable) {
             effect.setParameter(ViperParams.PARAM_ANALOG_X_MODE, state.analogX.mode)
         }
 
         // Speaker Correction
-        effect.setParameter(ViperParams.PARAM_SPEAKER_CORRECTION_ENABLE, if (state.speakerCorrection.enable) 1 else 0)
+        effect.setParameter(ViperParams.PARAM_SPEAKER_CORRECTION_ENABLE, state.speakerCorrection.enable)
     }
 
     fun eqBandLevelsToBytes(bands: List<Double>): ByteArray {

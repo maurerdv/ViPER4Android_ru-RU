@@ -1,14 +1,13 @@
 package com.llsl.viper4android.effect
 
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.llsl.viper4android.data.repository.ViperRepository
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 import java.util.Locale
 
 sealed class EffectPref<T>(
@@ -29,8 +28,6 @@ sealed class EffectPref<T>(
             } else {
                 "${effectKey}_$jsonKey"
             }
-
-    abstract fun toRaw(value: T): Int
 }
 
 class IntPref(
@@ -40,12 +37,21 @@ class IntPref(
     defaultValue: Int,
     get: (EffectState) -> Int,
     set: EffectState.(Int) -> EffectState,
-    private val toRawFn: ((Int) -> Int)? = null,
     val range: IntRange? = null,
 ) : EffectPref<Int>(effectKey, paramId, jsonKey, defaultValue, get, set) {
-    override fun toRaw(value: Int): Int = toRawFn?.invoke(value) ?: value
-
     fun clamp(value: Int): Int = range?.let { value.coerceIn(it) } ?: value
+}
+
+class FloatPref(
+    effectKey: String,
+    paramId: Int,
+    jsonKey: String,
+    defaultValue: Float,
+    get: (EffectState) -> Float,
+    set: EffectState.(Float) -> EffectState,
+    val range: ClosedFloatingPointRange<Float>? = null,
+) : EffectPref<Float>(effectKey, paramId, jsonKey, defaultValue, get, set) {
+    fun clamp(value: Float): Float = range?.let { value.coerceIn(it) } ?: value
 }
 
 class BoolPref(
@@ -56,9 +62,7 @@ class BoolPref(
     get: (EffectState) -> Boolean,
     set: EffectState.(Boolean) -> EffectState,
     prefKeyOverride: String? = null,
-) : EffectPref<Boolean>(effectKey, paramId, jsonKey, defaultValue, get, set, prefKeyOverride) {
-    override fun toRaw(value: Boolean): Int = if (value) 1 else 0
-}
+) : EffectPref<Boolean>(effectKey, paramId, jsonKey, defaultValue, get, set, prefKeyOverride)
 
 class StringPref(
     effectKey: String,
@@ -67,18 +71,14 @@ class StringPref(
     defaultValue: String,
     get: (EffectState) -> String,
     set: EffectState.(String) -> EffectState,
-) : EffectPref<String>(effectKey, paramId, jsonKey, defaultValue, get, set) {
-    override fun toRaw(value: String): Int = 0
-}
+) : EffectPref<String>(effectKey, paramId, jsonKey, defaultValue, get, set)
 
 class NullableLongPref(
     effectKey: String,
     jsonKey: String,
     get: (EffectState) -> Long?,
     set: EffectState.(Long?) -> EffectState,
-) : EffectPref<Long?>(effectKey, -1, jsonKey, null, get, set) {
-    override fun toRaw(value: Long?): Int = value?.toInt() ?: -1
-}
+) : EffectPref<Long?>(effectKey, -1, jsonKey, null, get, set)
 
 sealed class ListPref<E>(
     effectKey: String,
@@ -88,11 +88,7 @@ sealed class ListPref<E>(
     get: (EffectState) -> List<E>,
     set: EffectState.(List<E>) -> EffectState,
 ) : EffectPref<List<E>>(effectKey, paramId, jsonKey, defaultValue, get, set) {
-    override fun toRaw(value: List<E>): Int = 0
-
     abstract val padValue: E
-
-    abstract fun elementToRaw(value: E): Int
 }
 
 class IntListPref(
@@ -102,14 +98,25 @@ class IntListPref(
     defaultValue: List<Int>,
     get: (EffectState) -> List<Int>,
     set: EffectState.(List<Int>) -> EffectState,
-    private val elementToRawFn: ((Int) -> Int)? = null,
     val range: IntRange? = null,
 ) : ListPref<Int>(effectKey, paramId, jsonKey, defaultValue, get, set) {
     override val padValue: Int = 0
 
-    override fun elementToRaw(value: Int): Int = elementToRawFn?.invoke(value) ?: value
-
     fun clampElement(value: Int): Int = range?.let { value.coerceIn(it) } ?: value
+}
+
+class FloatListPref(
+    effectKey: String,
+    paramId: Int,
+    jsonKey: String,
+    defaultValue: List<Float>,
+    get: (EffectState) -> List<Float>,
+    set: EffectState.(List<Float>) -> EffectState,
+    val range: ClosedFloatingPointRange<Float>? = null,
+) : ListPref<Float>(effectKey, paramId, jsonKey, defaultValue, get, set) {
+    override val padValue: Float = 0.0f
+
+    fun clampElement(value: Float): Float = range?.let { value.coerceIn(it) } ?: value
 }
 
 class BoolListPref(
@@ -121,8 +128,6 @@ class BoolListPref(
     set: EffectState.(List<Boolean>) -> EffectState,
 ) : ListPref<Boolean>(effectKey, paramId, jsonKey, defaultValue, get, set) {
     override val padValue: Boolean = true
-
-    override fun elementToRaw(value: Boolean): Int = if (value) 1 else 0
 }
 
 class DoubleListPref(
@@ -134,18 +139,9 @@ class DoubleListPref(
     set: EffectState.(List<Double>) -> EffectState,
     val range: ClosedFloatingPointRange<Double>? = null,
 ) : EffectPref<List<Double>>(effectKey, paramId, jsonKey, defaultValue, get, set) {
-    override fun toRaw(value: List<Double>): Int = 0
-
     fun clampElement(value: Double): Double = range?.let { value.coerceIn(it) } ?: value
 
-    fun toRawArray(value: List<Double>): ByteArray {
-        val bytes = ByteArray(256)
-        val bb =
-            ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-        bb.putInt(value.size)
-        for (v in value) bb.putFloat(v.toFloat())
-        return bytes
-    }
+    fun toFloatArray(value: List<Double>): FloatArray = value.map { it.toFloat() }.toFloatArray()
 }
 
 val EFFECT_PREFS: List<EffectPref<*>> =
@@ -156,6 +152,7 @@ val EFFECT_PREFS_BY_PARAM_ID: Map<Int, EffectPref<*>> =
         .filter {
             it.paramId != -1 &&
                 it !is IntListPref &&
+                it !is FloatListPref &&
                 it !is BoolListPref &&
                 it !is DoubleListPref
         }.associateBy { it.paramId }
@@ -169,6 +166,11 @@ val ENABLE_PREF_BY_EFFECT_KEY: Map<String, BoolPref> =
 
 private fun spJoinInts(list: List<Int>): String = list.joinToString(";")
 
+private fun spJoinFloats(list: List<Float>): String =
+    list.joinToString(";") {
+        String.format(Locale.US, "%.4f", it)
+    }
+
 private fun spSplitInts(
     s: String,
     default: List<Int>,
@@ -177,6 +179,16 @@ private fun spSplitInts(
     val parts = s.split(";").filter { it.isNotBlank() }
     if (parts.isEmpty()) return default
     return parts.mapNotNull { it.toIntOrNull() }
+}
+
+private fun spSplitFloats(
+    s: String,
+    default: List<Float>,
+): List<Float> {
+    if (s.isBlank()) return default
+    val parts = s.split(";").filter { it.isNotBlank() }
+    if (parts.isEmpty()) return default
+    return parts.mapNotNull { it.toFloatOrNull() }
 }
 
 private fun spJoinBools(list: List<Boolean>): String = list.joinToString(";") { if (it) "1" else "0" }
@@ -218,6 +230,10 @@ suspend fun loadEffectPrefs(
                     pref.set(s, repository.getIntPreference(pref.prefKey, pref.defaultValue).first())
                 }
 
+                is FloatPref -> {
+                    pref.set(s, repository.getFloatPreference(pref.prefKey, pref.defaultValue).first())
+                }
+
                 is BoolPref -> {
                     pref.set(s, repository.getBooleanPreference(pref.prefKey, pref.defaultValue).first())
                 }
@@ -234,6 +250,11 @@ suspend fun loadEffectPrefs(
                 is IntListPref -> {
                     val raw = repository.getStringPreference(pref.prefKey, spJoinInts(pref.defaultValue)).first()
                     pref.set(s, spSplitInts(raw, pref.defaultValue))
+                }
+
+                is FloatListPref -> {
+                    val raw = repository.getStringPreference(pref.prefKey, spJoinFloats(pref.defaultValue)).first()
+                    pref.set(s, spSplitFloats(raw, pref.defaultValue))
                 }
 
                 is BoolListPref -> {
@@ -258,10 +279,12 @@ suspend fun saveEffectPrefs(
         for (pref in EFFECT_PREFS) {
             when (pref) {
                 is IntPref -> prefs[intPreferencesKey(pref.prefKey)] = pref.get(state)
+                is FloatPref -> prefs[floatPreferencesKey(pref.prefKey)] = pref.get(state)
                 is BoolPref -> prefs[booleanPreferencesKey(pref.prefKey)] = pref.get(state)
                 is StringPref -> prefs[stringPreferencesKey(pref.prefKey)] = pref.get(state)
                 is NullableLongPref -> prefs[intPreferencesKey(pref.prefKey)] = pref.get(state)?.toInt() ?: -1
                 is IntListPref -> prefs[stringPreferencesKey(pref.prefKey)] = spJoinInts(pref.get(state))
+                is FloatListPref -> prefs[stringPreferencesKey(pref.prefKey)] = spJoinFloats(pref.get(state))
                 is BoolListPref -> prefs[stringPreferencesKey(pref.prefKey)] = spJoinBools(pref.get(state))
                 is DoubleListPref -> prefs[stringPreferencesKey(pref.prefKey)] = spJoinDoubles(pref.get(state))
             }
@@ -282,11 +305,9 @@ fun serializeEffectPrefs(
     createdAt: Long?,
 ): JSONObject {
     val root = JSONObject()
-    if (name != null || createdAt != null) {
-        root.put(KEY_SCHEMA_VERSION, PRESET_SCHEMA_VERSION)
-        if (name != null) root.put(KEY_NAME, name)
-        if (createdAt != null) root.put(KEY_CREATED_AT, createdAt)
-    }
+    root.put(KEY_SCHEMA_VERSION, PRESET_SCHEMA_VERSION)
+    if (name != null) root.put(KEY_NAME, name)
+    if (createdAt != null) root.put(KEY_CREATED_AT, createdAt)
     for (group in EFFECT_GROUPS) {
         val obj = JSONObject()
         for (pref in group.prefs) {
@@ -305,6 +326,10 @@ private fun putPrefValue(
     when (pref) {
         is IntPref -> {
             obj.put(pref.jsonKey, pref.get(state))
+        }
+
+        is FloatPref -> {
+            obj.put(pref.jsonKey, pref.get(state).toDouble())
         }
 
         is BoolPref -> {
@@ -326,6 +351,12 @@ private fun putPrefValue(
             obj.put(pref.jsonKey, arr)
         }
 
+        is FloatListPref -> {
+            val arr = JSONArray()
+            for (v in pref.get(state)) arr.put(v.toDouble())
+            obj.put(pref.jsonKey, arr)
+        }
+
         is BoolListPref -> {
             val arr = JSONArray()
             for (v in pref.get(state)) arr.put(v)
@@ -344,6 +375,7 @@ fun deserializeEffectPrefs(
     obj: JSONObject,
     state: EffectState,
 ): EffectState {
+    val sourceSchema = obj.optDouble(KEY_SCHEMA_VERSION, 0.0)
     var s = state
     for (group in EFFECT_GROUPS) {
         val sub = obj.optJSONObject(group.effectKey) ?: continue
@@ -363,6 +395,10 @@ private fun applyPrefFromJson(
     return when (pref) {
         is IntPref -> {
             pref.set(state, pref.clamp(obj.optInt(pref.jsonKey, pref.get(state))))
+        }
+
+        is FloatPref -> {
+            pref.set(state, pref.clamp(obj.optDouble(pref.jsonKey, pref.get(state).toDouble()).toFloat()))
         }
 
         is BoolPref -> {
@@ -388,6 +424,16 @@ private fun applyPrefFromJson(
             val arr = obj.optJSONArray(pref.jsonKey) ?: return state
             val list = mutableListOf<Int>()
             for (i in 0 until arr.length()) list.add(pref.clampElement(arr.optInt(i, 0)))
+            pref.set(state, list.toList())
+        }
+
+        is FloatListPref -> {
+            val arr = obj.optJSONArray(pref.jsonKey) ?: return state
+            val list = mutableListOf<Float>()
+            for (i in 0 until arr.length()) {
+                val raw = arr.optDouble(i, 0.0).toFloat()
+                list.add(pref.clampElement(arr.optDouble(i, 0.0).toFloat()))
+            }
             pref.set(state, list.toList())
         }
 

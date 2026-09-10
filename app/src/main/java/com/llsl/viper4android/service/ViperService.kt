@@ -92,6 +92,7 @@ class ViperService : LifecycleService() {
     private var excludedApps: Set<String> = emptySet()
 
     private data class DecodedKernel(
+        val samples: FloatArray,
         val rawBytes: ByteArray,
         val totalFloats: Int,
         val channelCount: Int,
@@ -106,6 +107,7 @@ class ViperService : LifecycleService() {
             if (totalFloats != other.totalFloats) return false
             if (channelCount != other.channelCount) return false
             if (crc != other.crc) return false
+            if (!samples.contentEquals(other.samples)) return false
             if (!rawBytes.contentEquals(other.rawBytes)) return false
 
             return true
@@ -115,6 +117,7 @@ class ViperService : LifecycleService() {
             var result = totalFloats
             result = 31 * result + channelCount
             result = 31 * result + crc
+            result = 31 * result + samples.contentHashCode()
             result = 31 * result + rawBytes.contentHashCode()
             return result
         }
@@ -452,9 +455,106 @@ class ViperService : LifecycleService() {
             ViperControlClient.dispatchParam(param, value)
             return
         }
-        globalEffect?.setParameter(param, value)
+
+        fun send(effect: ViperEffect) {
+            effect.setParameter(param, value)
+        }
+        globalEffect?.let(::send)
         for (i in 0 until sessions.size) {
-            sessions.valueAt(i).setParameter(param, value)
+            send(sessions.valueAt(i))
+        }
+    }
+
+    fun dispatchParam(
+        param: Int,
+        value: Boolean,
+    ) {
+        if (useAidlTypeUuid) {
+            ViperControlClient.dispatchParam(param, value)
+            return
+        }
+
+        fun send(effect: ViperEffect) {
+            effect.setParameter(param, value)
+        }
+        globalEffect?.let(::send)
+        for (i in 0 until sessions.size) {
+            send(sessions.valueAt(i))
+        }
+    }
+
+    fun dispatchParam(
+        param: Int,
+        value: Float,
+    ) {
+        if (useAidlTypeUuid) {
+            ViperControlClient.dispatchParam(param, value)
+            return
+        }
+
+        fun send(effect: ViperEffect) {
+            effect.setParameter(param, value)
+        }
+        globalEffect?.let(::send)
+        for (i in 0 until sessions.size) {
+            send(sessions.valueAt(i))
+        }
+    }
+
+    fun dispatchParam(
+        param: Int,
+        index: Int,
+        value: Int,
+    ) {
+        if (useAidlTypeUuid) {
+            ViperControlClient.dispatchParam(param, index, value)
+            return
+        }
+
+        fun send(effect: ViperEffect) {
+            effect.setParameter(param, index, value)
+        }
+        globalEffect?.let(::send)
+        for (i in 0 until sessions.size) {
+            send(sessions.valueAt(i))
+        }
+    }
+
+    fun dispatchParam(
+        param: Int,
+        index: Int,
+        value: Boolean,
+    ) {
+        if (useAidlTypeUuid) {
+            ViperControlClient.dispatchParam(param, index, value)
+            return
+        }
+
+        fun send(effect: ViperEffect) {
+            effect.setParameter(param, index, value)
+        }
+        globalEffect?.let(::send)
+        for (i in 0 until sessions.size) {
+            send(sessions.valueAt(i))
+        }
+    }
+
+    fun dispatchParam(
+        param: Int,
+        index: Int,
+        value: Float,
+    ) {
+        if (useAidlTypeUuid) {
+            ViperControlClient.dispatchParam(param, index, value)
+            return
+        }
+
+        fun send(effect: ViperEffect) {
+            effect.setParameter(param, index, value)
+        }
+        globalEffect?.let(::send)
+        for (i in 0 until sessions.size) {
+            send(sessions.valueAt(i))
         }
     }
 
@@ -477,6 +577,20 @@ class ViperService : LifecycleService() {
     fun dispatchParam(
         param: Int,
         value: ByteArray,
+    ) {
+        if (useAidlTypeUuid) {
+            ViperControlClient.dispatchParam(param, value)
+            return
+        }
+        globalEffect?.setParameter(param, value)
+        for (i in 0 until sessions.size) {
+            sessions.valueAt(i).setParameter(param, value)
+        }
+    }
+
+    fun dispatchParam(
+        param: Int,
+        value: FloatArray,
     ) {
         if (useAidlTypeUuid) {
             ViperControlClient.dispatchParam(param, value)
@@ -549,7 +663,7 @@ class ViperService : LifecycleService() {
             } else {
                 { p, a, b, c -> dispatchParam(p, a, b, c) }
             }
-        val sendBytes: (Int, ByteArray) -> Unit =
+        val sendFloats: (Int, FloatArray) -> Unit =
             if (effect != null) {
                 { p, v -> effect.setParameter(p, v) }
             } else {
@@ -568,17 +682,19 @@ class ViperService : LifecycleService() {
 
         try {
             val decoded = decodedKernelCache[src.absolutePath]
+            val samples: FloatArray
             val rawBytes: ByteArray
             val totalFloats: Int
             val channelCount: Int
             val crc: Int
             if (decoded != null) {
-                rawBytes = decoded.rawBytes
+                samples = decoded.samples
                 totalFloats = decoded.totalFloats
                 channelCount = decoded.channelCount
                 crc = decoded.crc
             } else {
                 val d = WavDecoder.decode(src.readBytes())
+                samples = d.samples
                 totalFloats = d.samples.size
                 channelCount = d.channels
                 FileLogger.i("Service", "Kernel decoded: $fileName samples=$totalFloats ch=$channelCount")
@@ -586,11 +702,11 @@ class ViperService : LifecycleService() {
                     ByteBuffer
                         .allocate(totalFloats * 4)
                         .order(ByteOrder.LITTLE_ENDIAN)
-                        .also { for (f in d.samples) it.putFloat(f) }
+                        .also { for (f in samples) it.putFloat(f) }
                         .array()
                 crc = CRC32().apply { update(rawBytes) }.value.toInt()
                 decodedKernelCache[src.absolutePath] =
-                    DecodedKernel(rawBytes, totalFloats, channelCount, crc)
+                    DecodedKernel(samples, rawBytes, totalFloats, channelCount, crc)
             }
 
             sendInts(ViperParams.PARAM_CONVOLVER_PREPARE_BUFFER, totalFloats, channelCount, 0)
@@ -599,13 +715,11 @@ class ViperService : LifecycleService() {
             var offset = 0
             var chunkIndex = 0
             while (offset < totalFloats) {
-                val remaining = totalFloats - offset
-                val floatsInChunk = minOf(remaining, maxFloatsPerChunk)
-                val chunk = ByteBuffer.allocate(8192).order(ByteOrder.LITTLE_ENDIAN)
-                chunk.putInt(chunkIndex)
-                chunk.putInt(floatsInChunk)
-                chunk.put(rawBytes, offset * 4, floatsInChunk * 4)
-                sendBytes(ViperParams.PARAM_CONVOLVER_SET_BUFFER, chunk.array())
+                val floatsInChunk = minOf(totalFloats - offset, maxFloatsPerChunk)
+                sendFloats(
+                    ViperParams.PARAM_CONVOLVER_SET_BUFFER,
+                    samples.copyOfRange(offset, offset + floatsInChunk),
+                )
                 offset += floatsInChunk
                 chunkIndex++
             }
@@ -625,27 +739,14 @@ class ViperService : LifecycleService() {
         effect: ViperEffect? = null,
     ) {
         if (name == lastBulkDdcKey && !force) return
-        val sendBytes: (Int, ByteArray) -> Unit =
+        val sendFloats: (Int, FloatArray) -> Unit =
             if (effect != null) {
                 { p, v -> effect.setParameter(p, v) }
             } else {
                 { p, v -> dispatchParam(p, v) }
             }
         if (name.isEmpty()) {
-            val bytes =
-                if (effect != null) {
-                    ByteArray(256).also {
-                        ByteBuffer.wrap(it).order(ByteOrder.LITTLE_ENDIAN).putInt(0)
-                    }
-                } else {
-                    ByteBuffer
-                        .allocate(8192)
-                        .order(ByteOrder.LITTLE_ENDIAN)
-                        .putInt(0)
-                        .putInt(0)
-                        .array()
-                }
-            sendBytes(ViperParams.PARAM_DDC_COEFFICIENTS, bytes)
+            sendFloats(ViperParams.PARAM_DDC_COEFFICIENTS, FloatArray(0))
             lastBulkDdcKey = null
             return
         }
@@ -657,44 +758,12 @@ class ViperService : LifecycleService() {
         val parsed = parseVdc(file) ?: return
         val sec44100 = parsed.first
         val sec48000 = parsed.second
-        val sectionCount = sec44100.size
-        val floatsPerRate = sectionCount * 5
-        val bytes: ByteArray =
-            if (effect != null) {
-                val naturalSize = 4 + floatsPerRate * 4 * 2
-                val wireSize =
-                    when {
-                        naturalSize <= 256 -> {
-                            256
-                        }
-
-                        naturalSize <= 1024 -> {
-                            1024
-                        }
-
-                        else -> {
-                            FileLogger.w("Service", "DDC file too large ($naturalSize bytes; max 1024)")
-                            return
-                        }
-                    }
-                ByteArray(wireSize).also { arr ->
-                    val buf = ByteBuffer.wrap(arr).order(ByteOrder.LITTLE_ENDIAN)
-                    buf.putInt(floatsPerRate)
-                    for (s in sec44100) for (v in s) buf.putFloat(v)
-                    for (s in sec48000) for (v in s) buf.putFloat(v)
-                }
-            } else {
-                ByteBuffer
-                    .allocate(8192)
-                    .order(ByteOrder.LITTLE_ENDIAN)
-                    .also { buf ->
-                        buf.putInt(0)
-                        buf.putInt(floatsPerRate)
-                        for (s in sec44100) for (v in s) buf.putFloat(v)
-                        for (s in sec48000) for (v in s) buf.putFloat(v)
-                    }.array()
-            }
-        sendBytes(ViperParams.PARAM_DDC_COEFFICIENTS, bytes)
+        val floatsPerRate = sec44100.size * 5
+        val coeffs = FloatArray(floatsPerRate * 2)
+        var i = 0
+        for (s in sec44100) for (v in s) coeffs[i++] = v
+        for (s in sec48000) for (v in s) coeffs[i++] = v
+        sendFloats(ViperParams.PARAM_DDC_COEFFICIENTS, coeffs)
         lastBulkDdcKey = name
     }
 

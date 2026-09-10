@@ -19,10 +19,22 @@ abstract class EffectGroupBuilder(
         default: Int,
         get: (EffectState) -> Int,
         set: EffectState.(Int) -> EffectState,
-        toRawFn: ((Int) -> Int)? = null,
         range: IntRange? = null,
     ): IntPref {
-        val pref = IntPref(effectKey, paramId, jsonKey, default, get, set, toRawFn, range)
+        val pref = IntPref(effectKey, paramId, jsonKey, default, get, set, range)
+        prefList += pref
+        return pref
+    }
+
+    protected fun float(
+        paramId: Int,
+        jsonKey: String,
+        default: Float,
+        get: (EffectState) -> Float,
+        set: EffectState.(Float) -> EffectState,
+        range: ClosedFloatingPointRange<Float>? = null,
+    ): FloatPref {
+        val pref = FloatPref(effectKey, paramId, jsonKey, default, get, set, range)
         prefList += pref
         return pref
     }
@@ -67,10 +79,22 @@ abstract class EffectGroupBuilder(
         default: List<Int>,
         get: (EffectState) -> List<Int>,
         set: EffectState.(List<Int>) -> EffectState,
-        elementToRaw: ((Int) -> Int)? = null,
         range: IntRange? = null,
     ): IntListPref {
-        val pref = IntListPref(effectKey, paramId, jsonKey, default, get, set, elementToRaw, range)
+        val pref = IntListPref(effectKey, paramId, jsonKey, default, get, set, range)
+        prefList += pref
+        return pref
+    }
+
+    protected fun floatList(
+        paramId: Int,
+        jsonKey: String,
+        default: List<Float>,
+        get: (EffectState) -> List<Float>,
+        set: EffectState.(List<Float>) -> EffectState,
+        range: ClosedFloatingPointRange<Float>? = null,
+    ): FloatListPref {
+        val pref = FloatListPref(effectKey, paramId, jsonKey, default, get, set, range)
         prefList += pref
         return pref
     }
@@ -105,31 +129,31 @@ abstract class EffectGroupBuilder(
 
 class MasterLimiterEffect : EffectGroupBuilder("masterLimiter") {
     val threshold =
-        int(
+        float(
             ViperParams.PARAM_MASTER_LIMITER_THRESHOLD,
             "threshold",
-            100,
+            1.0f,
             { it.out.limiter },
             { copy(out = out.copy(limiter = it)) },
-            range = 30..100,
+            range = 0.3f..1.0f,
         )
     val outputVolume =
-        int(
+        float(
             ViperParams.PARAM_MASTER_LIMITER_OUTPUT_VOLUME,
             "outputVolume",
-            100,
+            1.0f,
             { it.out.volume },
             { copy(out = out.copy(volume = it)) },
-            range = 1..200,
+            range = 0.01f..2.0f,
         )
     val channelPan =
-        int(
+        float(
             ViperParams.PARAM_MASTER_LIMITER_CHANNEL_PAN,
             "channelPan",
-            0,
+            0.0f,
             { it.out.channelPan },
             { copy(out = out.copy(channelPan = it)) },
-            range = -100..100,
+            range = -1.0f..1.0f,
         )
 }
 
@@ -143,31 +167,31 @@ class PlaybackGainControlEffect : EffectGroupBuilder("playbackGainControl") {
             { copy(playbackGainControl = playbackGainControl.copy(enable = it)) },
         )
     val strength =
-        int(
+        float(
             ViperParams.PARAM_PLAYBACK_GAIN_CONTROL_STRENGTH,
             "strength",
-            100,
+            1.0f,
             { it.playbackGainControl.strength },
             { copy(playbackGainControl = playbackGainControl.copy(strength = it)) },
-            range = 50..300,
+            range = 0.5f..3.0f,
         )
     val maxGain =
-        int(
+        float(
             ViperParams.PARAM_PLAYBACK_GAIN_CONTROL_MAX_GAIN,
             "maxGain",
-            100,
+            1.0f,
             { it.playbackGainControl.maxGain },
             { copy(playbackGainControl = playbackGainControl.copy(maxGain = it)) },
-            range = 100..1000,
+            range = 1.0f..10.0f,
         )
     val outputThreshold =
-        int(
+        float(
             ViperParams.PARAM_PLAYBACK_GAIN_CONTROL_OUTPUT_THRESHOLD,
             "outputThreshold",
-            100,
+            1.0f,
             { it.playbackGainControl.outputThreshold },
             { copy(playbackGainControl = playbackGainControl.copy(outputThreshold = it)) },
-            range = 30..100,
+            range = 0.3f..1.0f,
         )
 }
 
@@ -181,22 +205,22 @@ class LufsEffect : EffectGroupBuilder("lufs") {
             { copy(lufs = lufs.copy(enable = it)) },
         )
     val target =
-        int(
+        float(
             ViperParams.PARAM_LUFS_TARGET,
             "target",
-            140,
+            -14.0f,
             { it.lufs.target },
             { copy(lufs = lufs.copy(target = it)) },
-            range = 80..240,
+            range = -24.0f..-8.0f,
         )
     val maxGain =
-        int(
+        float(
             ViperParams.PARAM_LUFS_MAX_GAIN,
             "maxGain",
-            60,
+            6.0f,
             { it.lufs.maxGain },
             { copy(lufs = lufs.copy(maxGain = it)) },
-            range = 0..120,
+            range = 0.0f..12.0f,
         )
     val speed =
         int(
@@ -219,23 +243,22 @@ class FetCompressorEffect : EffectGroupBuilder("fetCompressor") {
             { copy(fetCompressor = fetCompressor.copy(enable = it)) },
         )
     val threshold =
-        int(
+        float(
             ViperParams.PARAM_FET_COMPRESSOR_THRESHOLD,
             "threshold",
-            -18,
+            compressorDbToRaw(-18.0f),
             { it.fetCompressor.threshold },
             { copy(fetCompressor = fetCompressor.copy(threshold = it)) },
-            toRawFn = { ParamRaw.fetCompressorThreshold(it) },
-            range = -48..0,
+            range = compressorDbToRaw(-48.0f)..0.0f,
         )
     val ratio =
-        int(
+        float(
             ViperParams.PARAM_FET_COMPRESSOR_RATIO,
             "ratio",
-            100,
+            compressorRatioToRaw(1.0f),
             { it.fetCompressor.ratio },
             { copy(fetCompressor = fetCompressor.copy(ratio = it)) },
-            range = 0..200,
+            range = -2.0f..0.0f,
         )
     val kneeAuto =
         bool(
@@ -246,23 +269,22 @@ class FetCompressorEffect : EffectGroupBuilder("fetCompressor") {
             { copy(fetCompressor = fetCompressor.copy(kneeAuto = it)) },
         )
     val knee =
-        int(
+        float(
             ViperParams.PARAM_FET_COMPRESSOR_KNEE,
             "knee",
-            0,
+            0.0f,
             { it.fetCompressor.knee },
             { copy(fetCompressor = fetCompressor.copy(knee = it)) },
-            toRawFn = { ParamRaw.fetCompressorKnee(it) },
-            range = 0..12,
+            range = 0.0f..compressorDbToRaw(12.0f),
         )
     val kneeMulti =
-        int(
+        float(
             ViperParams.PARAM_FET_COMPRESSOR_KNEE_MULTI,
             "kneeMulti",
-            0,
+            0.0f,
             { it.fetCompressor.kneeMulti },
             { copy(fetCompressor = fetCompressor.copy(kneeMulti = it)) },
-            range = 0..100,
+            range = 0.0f..4.0f,
         )
     val gainAuto =
         bool(
@@ -273,14 +295,13 @@ class FetCompressorEffect : EffectGroupBuilder("fetCompressor") {
             { copy(fetCompressor = fetCompressor.copy(gainAuto = it)) },
         )
     val gain =
-        int(
+        float(
             ViperParams.PARAM_FET_COMPRESSOR_GAIN,
             "gain",
-            0,
+            0.0f,
             { it.fetCompressor.gain },
             { copy(fetCompressor = fetCompressor.copy(gain = it)) },
-            toRawFn = { ParamRaw.fetCompressorGain(it) },
-            range = 0..24,
+            range = 0.0f..compressorDbToRaw(24.0f),
         )
     val attackAuto =
         bool(
@@ -291,24 +312,22 @@ class FetCompressorEffect : EffectGroupBuilder("fetCompressor") {
             { copy(fetCompressor = fetCompressor.copy(attackAuto = it)) },
         )
     val attack =
-        int(
+        float(
             ViperParams.PARAM_FET_COMPRESSOR_ATTACK,
             "attack",
-            20,
+            compressorMsToSeconds(20.0f),
             { it.fetCompressor.attack },
             { copy(fetCompressor = fetCompressor.copy(attack = it)) },
-            toRawFn = { ParamRaw.fetCompressorAttackMs(it) },
-            range = 1..100,
+            range = 0.001f..0.100f,
         )
     val maxAttack =
-        int(
+        float(
             ViperParams.PARAM_FET_COMPRESSOR_MAX_ATTACK,
             "maxAttack",
-            80,
+            compressorMsToSeconds(80.0f),
             { it.fetCompressor.maxAttack },
             { copy(fetCompressor = fetCompressor.copy(maxAttack = it)) },
-            toRawFn = { ParamRaw.fetCompressorAttackMs(it) },
-            range = 1..100,
+            range = 0.001f..0.100f,
         )
     val releaseAuto =
         bool(
@@ -319,43 +338,40 @@ class FetCompressorEffect : EffectGroupBuilder("fetCompressor") {
             { copy(fetCompressor = fetCompressor.copy(releaseAuto = it)) },
         )
     val release =
-        int(
+        float(
             ViperParams.PARAM_FET_COMPRESSOR_RELEASE,
             "release",
-            50,
+            compressorMsToSeconds(50.0f),
             { it.fetCompressor.release },
             { copy(fetCompressor = fetCompressor.copy(release = it)) },
-            toRawFn = { ParamRaw.fetCompressorReleaseMs(it) },
-            range = 5..500,
+            range = 0.005f..0.500f,
         )
     val maxRelease =
-        int(
+        float(
             ViperParams.PARAM_FET_COMPRESSOR_MAX_RELEASE,
             "maxRelease",
-            100,
+            compressorMsToSeconds(100.0f),
             { it.fetCompressor.maxRelease },
             { copy(fetCompressor = fetCompressor.copy(maxRelease = it)) },
-            toRawFn = { ParamRaw.fetCompressorReleaseMs(it) },
-            range = 5..500,
+            range = 0.005f..0.500f,
         )
     val crest =
-        int(
+        float(
             ViperParams.PARAM_FET_COMPRESSOR_CREST,
             "crest",
-            100,
+            compressorMsToSeconds(100.0f),
             { it.fetCompressor.crest },
             { copy(fetCompressor = fetCompressor.copy(crest = it)) },
-            toRawFn = { ParamRaw.fetCompressorReleaseMs(it) },
-            range = 5..300,
+            range = 0.005f..0.300f,
         )
     val adapt =
-        int(
+        float(
             ViperParams.PARAM_FET_COMPRESSOR_ADAPT,
             "adapt",
-            50,
+            compressorAdaptAmountToSeconds(0.5f),
             { it.fetCompressor.adapt },
             { copy(fetCompressor = fetCompressor.copy(adapt = it)) },
-            range = 0..200,
+            range = 1.0f..16.0f,
         )
     val noClip =
         bool(
@@ -394,111 +410,103 @@ class MultibandCompressorEffect : EffectGroupBuilder("multibandCompressor") {
             range = 30..16000,
         )
     val thresholds =
-        intList(
+        floatList(
             ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_THRESHOLD,
             "thresholds",
-            listOf(-18, -18, -18, -18, -18),
+            List(5) { compressorDbToRaw(-18.0f) },
             { it.multibandCompressor.thresholds },
             { copy(multibandCompressor = multibandCompressor.copy(thresholds = it)) },
-            elementToRaw = { ParamRaw.fetCompressorThreshold(it) },
-            range = -48..0,
+            range = compressorDbToRaw(-48.0f)..0.0f,
         )
     val ratios =
-        intList(
+        floatList(
             ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_RATIO,
             "ratios",
-            listOf(50, 50, 50, 50, 50),
+            List(5) { compressorRatioToRaw(0.5f) },
             { it.multibandCompressor.ratios },
             { copy(multibandCompressor = multibandCompressor.copy(ratios = it)) },
-            range = 0..200,
+            range = -2.0f..0.0f,
         )
     val gains =
-        intList(
+        floatList(
             ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_GAIN,
             "gains",
-            listOf(0, 0, 0, 0, 0),
+            listOf(0.0f, 0.0f, 0.0f, 0.0f, 0.0f),
             { it.multibandCompressor.gains },
             { copy(multibandCompressor = multibandCompressor.copy(gains = it)) },
-            elementToRaw = { ParamRaw.fetCompressorGain(it) },
-            range = 0..24,
+            range = 0.0f..compressorDbToRaw(24.0f),
         )
     val knees =
-        intList(
+        floatList(
             ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_KNEE,
             "knees",
-            listOf(0, 0, 0, 0, 0),
+            listOf(0.0f, 0.0f, 0.0f, 0.0f, 0.0f),
             { it.multibandCompressor.knees },
             { copy(multibandCompressor = multibandCompressor.copy(knees = it)) },
-            elementToRaw = { ParamRaw.fetCompressorKnee(it) },
-            range = 0..12,
+            range = 0.0f..compressorDbToRaw(12.0f),
         )
     val kneeMultis =
-        intList(
+        floatList(
             ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_KNEE_MULTI,
             "kneeMultis",
-            listOf(0, 0, 0, 0, 0),
+            listOf(0.0f, 0.0f, 0.0f, 0.0f, 0.0f),
             { it.multibandCompressor.kneeMultis },
             { copy(multibandCompressor = multibandCompressor.copy(kneeMultis = it)) },
-            range = 0..100,
+            range = 0.0f..4.0f,
         )
     val attacks =
-        intList(
+        floatList(
             ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_ATTACK,
             "attacks",
-            listOf(1, 1, 1, 1, 1),
+            List(5) { compressorMsToSeconds(1.0f) },
             { it.multibandCompressor.attacks },
             { copy(multibandCompressor = multibandCompressor.copy(attacks = it)) },
-            elementToRaw = { ParamRaw.fetCompressorAttackMs(it) },
-            range = 1..100,
+            range = 0.001f..0.100f,
         )
     val maxAttacks =
-        intList(
+        floatList(
             ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_MAX_ATTACK,
             "maxAttacks",
-            listOf(44, 44, 44, 44, 44),
+            List(5) { compressorMsToSeconds(44.0f) },
             { it.multibandCompressor.maxAttacks },
             { copy(multibandCompressor = multibandCompressor.copy(maxAttacks = it)) },
-            elementToRaw = { ParamRaw.fetCompressorAttackMs(it) },
-            range = 1..100,
+            range = 0.001f..0.100f,
         )
     val releases =
-        intList(
+        floatList(
             ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_RELEASE,
             "releases",
-            listOf(100, 100, 100, 100, 100),
+            List(5) { compressorMsToSeconds(100.0f) },
             { it.multibandCompressor.releases },
             { copy(multibandCompressor = multibandCompressor.copy(releases = it)) },
-            elementToRaw = { ParamRaw.fetCompressorReleaseMs(it) },
-            range = 5..500,
+            range = 0.005f..0.500f,
         )
     val maxReleases =
-        intList(
+        floatList(
             ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_MAX_RELEASE,
             "maxReleases",
-            listOf(200, 200, 200, 200, 200),
+            List(5) { compressorMsToSeconds(200.0f) },
             { it.multibandCompressor.maxReleases },
             { copy(multibandCompressor = multibandCompressor.copy(maxReleases = it)) },
-            elementToRaw = { ParamRaw.fetCompressorReleaseMs(it) },
-            range = 5..500,
+            range = 0.005f..0.500f,
         )
     val crests =
-        intList(
+        floatList(
             ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_CREST,
             "crests",
-            listOf(100, 100, 100, 100, 100),
+            List(5) { compressorMsToSeconds(100.0f) },
             { it.multibandCompressor.crests },
             { copy(multibandCompressor = multibandCompressor.copy(crests = it)) },
-            elementToRaw = { ParamRaw.fetCompressorReleaseMs(it) },
-            range = 5..300,
+            range = 0.005f..0.300f,
         )
     val adapts =
-        intList(
+        floatList(
             ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_ADAPT,
             "adapts",
-            listOf(50, 50, 50, 50, 50),
+            List(5) { compressorAdaptAmountToSeconds(0.5f) },
             { it.multibandCompressor.adapts },
             { copy(multibandCompressor = multibandCompressor.copy(adapts = it)) },
-            range = 0..200,
+            range = 1.0f..16.0f,
         )
     val kneeAutos =
         boolList(
@@ -580,14 +588,13 @@ class SpectrumExtensionEffect : EffectGroupBuilder("spectrumExtension") {
             range = 2200..8200,
         )
     val exciter =
-        int(
+        float(
             ViperParams.PARAM_SPECTRUM_EXTENSION_EXCITER,
             "exciter",
-            0,
+            0.0f,
             { it.spectrumExtension.exciter },
             { copy(spectrumExtension = spectrumExtension.copy(exciter = it)) },
-            toRawFn = { ParamRaw.spectrumExtensionExciter(it) },
-            range = 0..100,
+            range = 0.0f..6.0f,
         )
 }
 
@@ -652,49 +659,49 @@ class DynamicEqEffect : EffectGroupBuilder("dynamicEq") {
             range = 20..20000,
         )
     val qs =
-        intList(
+        floatList(
             ViperParams.PARAM_DYNAMIC_EQ_BAND_Q,
             "qs",
-            listOf(100, 100, 150),
+            listOf(1.0f, 1.0f, 1.5f),
             { it.dynamicEq.qs },
             { copy(dynamicEq = dynamicEq.copy(qs = it)) },
-            range = 50..800,
+            range = 0.5f..8.0f,
         )
     val gains =
-        intList(
+        floatList(
             ViperParams.PARAM_DYNAMIC_EQ_BAND_GAIN,
             "gains",
-            listOf(0, 0, 0),
+            listOf(0.0f, 0.0f, 0.0f),
             { it.dynamicEq.gains },
             { copy(dynamicEq = dynamicEq.copy(gains = it)) },
-            range = -120..120,
+            range = -12.0f..12.0f,
         )
     val thresholds =
-        intList(
+        floatList(
             ViperParams.PARAM_DYNAMIC_EQ_BAND_THRESHOLD,
             "thresholds",
-            listOf(-200, -200, -200),
+            listOf(-20.0f, -20.0f, -20.0f),
             { it.dynamicEq.thresholds },
             { copy(dynamicEq = dynamicEq.copy(thresholds = it)) },
-            range = -800..0,
+            range = -80.0f..0.0f,
         )
     val attacks =
-        intList(
+        floatList(
             ViperParams.PARAM_DYNAMIC_EQ_BAND_ATTACK,
             "attacks",
-            listOf(10, 10, 10),
+            listOf(10.0f, 10.0f, 10.0f),
             { it.dynamicEq.attacks },
             { copy(dynamicEq = dynamicEq.copy(attacks = it)) },
-            range = 1..100,
+            range = 1.0f..100.0f,
         )
     val releases =
-        intList(
+        floatList(
             ViperParams.PARAM_DYNAMIC_EQ_BAND_RELEASE,
             "releases",
-            listOf(100, 100, 100),
+            listOf(100.0f, 100.0f, 100.0f),
             { it.dynamicEq.releases },
             { copy(dynamicEq = dynamicEq.copy(releases = it)) },
-            range = 10..500,
+            range = 10.0f..500.0f,
         )
     val filterTypes =
         intList(
@@ -724,13 +731,13 @@ class ConvolverEffect : EffectGroupBuilder("convolver") {
             { copy(convolver = convolver.copy(kernelFile = it)) },
         )
     val crossChannel =
-        int(
+        float(
             ViperParams.PARAM_CONVOLVER_CROSS_CHANNEL,
             "crossChannel",
-            0,
+            0.0f,
             { it.convolver.crossChannel },
             { copy(convolver = convolver.copy(crossChannel = it)) },
-            range = 0..100,
+            range = 0.0f..1.0f,
         )
 }
 
@@ -744,34 +751,31 @@ class FieldSurroundEffect : EffectGroupBuilder("fieldSurround") {
             { copy(fieldSurround = fieldSurround.copy(enable = it)) },
         )
     val widening =
-        int(
+        float(
             ViperParams.PARAM_FIELD_SURROUND_WIDENING,
             "widening",
-            0,
+            0.0f,
             { it.fieldSurround.widening },
             { copy(fieldSurround = fieldSurround.copy(widening = it)) },
-            toRawFn = { ParamRaw.fieldSurroundWidening(it) },
-            range = 0..8,
+            range = 0.0f..8.0f,
         )
     val midImage =
-        int(
+        float(
             ViperParams.PARAM_FIELD_SURROUND_MID_IMAGE,
             "midImage",
-            5,
+            1.5f,
             { it.fieldSurround.midImage },
             { copy(fieldSurround = fieldSurround.copy(midImage = it)) },
-            toRawFn = { ParamRaw.fieldSurroundMidImage(it) },
-            range = 0..10,
+            range = 1.0f..2.0f,
         )
     val depth =
         int(
             ViperParams.PARAM_FIELD_SURROUND_DEPTH,
             "depth",
-            0,
+            200,
             { it.fieldSurround.depth },
             { copy(fieldSurround = fieldSurround.copy(depth = it)) },
-            toRawFn = { ParamRaw.fieldSurroundDepth(it) },
-            range = 0..10,
+            range = 200..950,
         )
 }
 
@@ -785,14 +789,13 @@ class DiffSurroundEffect : EffectGroupBuilder("diffSurround") {
             { copy(diffSurround = diffSurround.copy(enable = it)) },
         )
     val delay =
-        int(
+        float(
             ViperParams.PARAM_DIFF_SURROUND_DELAY,
             "delay",
-            5,
+            5.0f,
             { it.diffSurround.delay },
             { copy(diffSurround = diffSurround.copy(delay = it)) },
-            toRawFn = { ParamRaw.diffSurroundDelay(it) },
-            range = 1..20,
+            range = 1.0f..20.0f,
         )
     val reverse =
         bool(
@@ -803,13 +806,13 @@ class DiffSurroundEffect : EffectGroupBuilder("diffSurround") {
             { copy(diffSurround = diffSurround.copy(reverse = it)) },
         )
     val wetDryMix =
-        int(
+        float(
             ViperParams.PARAM_DIFF_SURROUND_WET_DRY_MIX,
             "wetDryMix",
-            100,
+            1.0f,
             { it.diffSurround.wetDryMix },
             { copy(diffSurround = diffSurround.copy(wetDryMix = it)) },
-            range = 0..100,
+            range = 0.0f..1.0f,
         )
     val lpCutoff =
         int(
@@ -832,31 +835,31 @@ class StereoImagerEffect : EffectGroupBuilder("stereoImager") {
             { copy(stereoImager = stereoImager.copy(enable = it)) },
         )
     val lowWidth =
-        int(
+        float(
             ViperParams.PARAM_STEREO_IMAGER_LOW_WIDTH,
             "lowWidth",
-            100,
+            1.0f,
             { it.stereoImager.lowWidth },
             { copy(stereoImager = stereoImager.copy(lowWidth = it)) },
-            range = 0..200,
+            range = 0.0f..2.0f,
         )
     val midWidth =
-        int(
+        float(
             ViperParams.PARAM_STEREO_IMAGER_MID_WIDTH,
             "midWidth",
-            100,
+            1.0f,
             { it.stereoImager.midWidth },
             { copy(stereoImager = stereoImager.copy(midWidth = it)) },
-            range = 0..200,
+            range = 0.0f..2.0f,
         )
     val highWidth =
-        int(
+        float(
             ViperParams.PARAM_STEREO_IMAGER_HIGH_WIDTH,
             "highWidth",
-            100,
+            1.0f,
             { it.stereoImager.highWidth },
             { copy(stereoImager = stereoImager.copy(highWidth = it)) },
-            range = 0..200,
+            range = 0.0f..2.0f,
         )
     val lowCrossover =
         int(
@@ -908,52 +911,49 @@ class ReverbEffect : EffectGroupBuilder("reverb") {
             { copy(reverb = reverb.copy(enable = it)) },
         )
     val roomSize =
-        int(
+        float(
             ViperParams.PARAM_REVERB_ROOM_SIZE,
             "roomSize",
-            0,
+            0.0f,
             { it.reverb.roomSize },
             { copy(reverb = reverb.copy(roomSize = it)) },
-            toRawFn = { ParamRaw.reverbRoomSize(it) },
-            range = 0..10,
+            range = 0.0f..1.0f,
         )
     val width =
-        int(
+        float(
             ViperParams.PARAM_REVERB_WIDTH,
             "width",
-            0,
+            0.0f,
             { it.reverb.width },
             { copy(reverb = reverb.copy(width = it)) },
-            toRawFn = { ParamRaw.reverbWidth(it) },
-            range = 0..10,
+            range = 0.0f..1.0f,
         )
     val damp =
-        int(
+        float(
             ViperParams.PARAM_REVERB_DAMP,
             "damp",
-            0,
+            0.5f,
             { it.reverb.damp },
             { copy(reverb = reverb.copy(damp = it)) },
-            toRawFn = { ParamRaw.reverbDamp(it) },
-            range = 0..10,
+            range = 0.0f..1.0f,
         )
     val wet =
-        int(
+        float(
             ViperParams.PARAM_REVERB_WET,
             "wet",
-            0,
+            0.0f,
             { it.reverb.wet },
             { copy(reverb = reverb.copy(wet = it)) },
-            range = 0..100,
+            range = 0.0f..1.0f,
         )
     val dry =
-        int(
+        float(
             ViperParams.PARAM_REVERB_DRY,
             "dry",
-            100,
+            1.0f,
             { it.reverb.dry },
             { copy(reverb = reverb.copy(dry = it)) },
-            range = 0..100,
+            range = 0.0f..1.0f,
         )
 }
 
@@ -981,14 +981,13 @@ class DynamicSystemEffect : EffectGroupBuilder("dynamicSystem") {
             { copy(dynamicSystem = dynamicSystem.copy(device = it)) },
         )
     val strength =
-        int(
+        float(
             ViperParams.PARAM_DYNAMIC_SYSTEM_STRENGTH,
             "strength",
-            50,
+            1.0f,
             { it.dynamicSystem.strength },
             { copy(dynamicSystem = dynamicSystem.copy(strength = it)) },
-            toRawFn = { ParamRaw.dynamicSystemStrength(it) },
-            range = 0..100,
+            range = 1.0f..8.0f,
         )
     val xLow =
         int(
@@ -1027,22 +1026,22 @@ class DynamicSystemEffect : EffectGroupBuilder("dynamicSystem") {
             range = 0..300,
         )
     val sideGainLow =
-        int(
+        float(
             ViperParams.PARAM_DYNAMIC_SYSTEM_SIDE_GAIN_LOW,
             "sideGainLow",
-            50,
+            0.5f,
             { it.dynamicSystem.sideGainLow },
             { copy(dynamicSystem = dynamicSystem.copy(sideGainLow = it)) },
-            range = 0..100,
+            range = 0.0f..1.0f,
         )
     val sideGainHigh =
-        int(
+        float(
             ViperParams.PARAM_DYNAMIC_SYSTEM_SIDE_GAIN_HIGH,
             "sideGainHigh",
-            50,
+            0.5f,
             { it.dynamicSystem.sideGainHigh },
             { copy(dynamicSystem = dynamicSystem.copy(sideGainHigh = it)) },
-            range = 0..100,
+            range = 0.0f..1.0f,
         )
 }
 
@@ -1065,13 +1064,13 @@ class PsychoacousticBassEffect : EffectGroupBuilder("psychoacousticBass") {
             range = 60..150,
         )
     val intensity =
-        int(
+        float(
             ViperParams.PARAM_PSYCHOACOUSTIC_BASS_INTENSITY,
             "intensity",
-            50,
+            0.5f,
             { it.psychoacousticBass.intensity },
             { copy(psychoacousticBass = psychoacousticBass.copy(intensity = it)) },
-            range = 0..100,
+            range = 0.0f..1.0f,
         )
     val harmonicOrder =
         int(
@@ -1083,13 +1082,13 @@ class PsychoacousticBassEffect : EffectGroupBuilder("psychoacousticBass") {
             range = 2..5,
         )
     val originalLevel =
-        int(
+        float(
             ViperParams.PARAM_PSYCHOACOUSTIC_BASS_ORIGINAL_LEVEL,
             "originalLevel",
-            100,
+            1.0f,
             { it.psychoacousticBass.originalLevel },
             { copy(psychoacousticBass = psychoacousticBass.copy(originalLevel = it)) },
-            range = 0..100,
+            range = 0.0f..1.0f,
         )
 }
 
@@ -1114,20 +1113,19 @@ class BassEffect : EffectGroupBuilder("bass") {
         int(
             ViperParams.PARAM_BASS_FREQUENCY,
             "frequency",
-            55,
+            60,
             { it.bass.frequency },
             { copy(bass = bass.copy(frequency = it)) },
-            toRawFn = { ParamRaw.bassFrequency(it) },
-            range = 0..135,
+            range = 15..150,
         )
     val gain =
-        int(
+        float(
             ViperParams.PARAM_BASS_GAIN,
             "gain",
-            50,
+            0.5f,
             { it.bass.gain },
             { copy(bass = bass.copy(gain = it)) },
-            range = 50..1000,
+            range = 0.5f..10.0f,
         )
     val antiPop =
         bool(
@@ -1160,20 +1158,19 @@ class BassMonoEffect : EffectGroupBuilder("bassMono") {
         int(
             ViperParams.PARAM_BASS_MONO_FREQUENCY,
             "frequency",
-            55,
+            60,
             { it.bassMono.frequency },
             { copy(bassMono = bassMono.copy(frequency = it)) },
-            toRawFn = { ParamRaw.bassFrequency(it) },
-            range = 0..135,
+            range = 15..150,
         )
     val gain =
-        int(
+        float(
             ViperParams.PARAM_BASS_MONO_GAIN,
             "gain",
-            50,
+            0.5f,
             { it.bassMono.gain },
             { copy(bassMono = bassMono.copy(gain = it)) },
-            range = 50..1000,
+            range = 0.5f..10.0f,
         )
     val antiPop =
         bool(
@@ -1203,13 +1200,13 @@ class ClarityEffect : EffectGroupBuilder("clarity") {
             { copy(clarity = clarity.copy(mode = it)) },
         )
     val gain =
-        int(
+        float(
             ViperParams.PARAM_CLARITY_GAIN,
             "gain",
-            50,
+            0.5f,
             { it.clarity.gain },
             { copy(clarity = clarity.copy(gain = it)) },
-            range = 0..450,
+            range = 0.0f..4.5f,
         )
 }
 

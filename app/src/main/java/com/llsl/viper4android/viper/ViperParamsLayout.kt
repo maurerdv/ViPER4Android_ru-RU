@@ -2,8 +2,8 @@
 // DO NOT EDIT MANUALLY. Regenerate this file after
 // any change to `ViPERDSP/include/ViPERParams.h`.
 //
-// Mirrors viper::ViPERParams byte layout for the shm producer in
-// ConfigChannel.kt. Field offsets are derived from the same C++
+// Mirrors viper::ViPERParams byte layout sent through typed
+// parameter dispatch. Field offsets are derived from the same C++
 // header the AIDL HAL consumer compiles against — Kotlin and C++
 // cannot disagree on struct shape.
 package com.llsl.viper4android.viper
