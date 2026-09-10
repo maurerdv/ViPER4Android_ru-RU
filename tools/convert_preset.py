@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Convert ViPER4Android v1 (flat JSON) and legacy XML presets to v2 grouped JSON.
+"""Convert ViPER4Android v1 (flat JSON) and legacy XML presets to grouped JSON.
 
 Two input formats are accepted:
 
@@ -7,29 +7,36 @@ Two input formats are accepted:
   ``fetThreshold``, ``eqBands`` (";"-joined arrays).
 - legacy XML: the old ViPER4Android ``<map>`` preset (parameter ids like
   ``36868``), including layouts older than v2.7.2.x. These are first translated
-  to the v1 flat form, then to v2.
+  to the v1 flat form, then to the grouped output.
 
-Output is the v2 grouped JSON (``schemaVersion: 2``). Fields absent from the
-input are filled with the app's defaults (from ``EffectStates.kt`` /
-``EffectPrefs.kt`` @ commit 064684c3).
+Output is the grouped preset JSON. With the default ``--to 2`` the values keep
+the app's legacy encoding (``schemaVersion: 2``); ``--to 2.1`` additionally
+converts every value to the semantic units the DSP expects (``schemaVersion:
+2.1``), mirroring ``EffectPrefs.convertOldPresetFloat``/``convertOldPresetInt``.
+Fields absent from the input are filled with the app's defaults (from
+``EffectStates.kt`` / ``EffectPrefs.kt``).
 
-Input format (v1 JSON vs XML) and, for v1 JSON, the headphone/speaker namespace
-are both auto-detected; no flags are needed for the common case.
+Input format, JSON schema version, and, for v1 JSON, the headphone/speaker
+namespace are auto-detected; no flags are needed for the common case.
 
 Examples::
 
-    # v1 JSON preset -> v2
+    # v1 JSON preset -> schema 2 (default)
     convert_preset.py hp.json -o hp.v2.json
-    convert_preset.py spk.json -o spk.v2.json
 
-    # legacy XML preset -> v2
-    convert_preset.py preset.xml -o default_m1.v2.json
+    # v1 JSON / legacy XML preset -> schema 2.1 (semantic units)
+    convert_preset.py spk.json --to 2.1 -o spk.v2.json
+    convert_preset.py preset.xml --to 2.1 -o default_m1.v2.json
+
+    # schema 2 JSON preset -> schema 2.1
+    convert_preset.py old-grouped.v2.json -o grouped.v2_1.json
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 import sys
 import xml.etree.ElementTree as ET
@@ -1270,6 +1277,144 @@ def v1_to_v2(
     return out
 
 
+_LOG_GAIN_PER_DB = math.log(10) / 20
+_ADAPT_BASE = 4.0
+
+
+def _db_to_raw(db: float) -> float:
+    return db * _LOG_GAIN_PER_DB
+
+
+def _ms_to_seconds(ms: float) -> float:
+    return ms / 1000.0
+
+
+def _adapt_to_seconds(amount: float) -> float:
+    return _ADAPT_BASE**amount
+
+
+def _div100(v: float) -> float:
+    return v / 100.0
+
+
+_COMPRESSOR_DB = _db_to_raw
+_COMPRESSOR_RATIO = lambda v: -(v / 100.0)
+_COMPRESSOR_MS = _ms_to_seconds
+_COMPRESSOR_ADAPT = lambda v: _adapt_to_seconds(v / 100.0)
+
+_FLOAT_SCALAR_CONV: dict[tuple[str, str], Any] = {
+    ("masterLimiter", "outputVolume"): _div100,
+    ("masterLimiter", "channelPan"): _div100,
+    ("masterLimiter", "threshold"): _div100,
+    ("playbackGainControl", "strength"): _div100,
+    ("playbackGainControl", "maxGain"): _div100,
+    ("playbackGainControl", "outputThreshold"): _div100,
+    ("lufs", "target"): lambda v: v / -10.0,
+    ("lufs", "maxGain"): lambda v: v / 10.0,
+    ("convolver", "crossChannel"): _div100,
+    ("diffSurround", "wetDryMix"): _div100,
+    ("stereoImager", "lowWidth"): _div100,
+    ("stereoImager", "midWidth"): _div100,
+    ("stereoImager", "highWidth"): _div100,
+    ("reverb", "wet"): _div100,
+    ("reverb", "dry"): _div100,
+    ("dynamicSystem", "sideGainLow"): _div100,
+    ("dynamicSystem", "sideGainHigh"): _div100,
+    ("dynamicSystem", "strength"): lambda v: 1.0 + v / 100.0 * 20.0,
+    ("psychoacousticBass", "intensity"): _div100,
+    ("psychoacousticBass", "originalLevel"): _div100,
+    ("bass", "gain"): _div100,
+    ("bassMono", "gain"): _div100,
+    ("clarity", "gain"): _div100,
+    ("spectrumExtension", "exciter"): lambda v: v / 100.0 * 5.6,
+    ("fieldSurround", "midImage"): lambda v: v / 10.0 + 1.0,
+    ("reverb", "roomSize"): lambda v: v / 10.0,
+    ("reverb", "width"): lambda v: v / 10.0,
+    ("reverb", "damp"): lambda v: v / 10.0,
+    ("fetCompressor", "threshold"): _COMPRESSOR_DB,
+    ("fetCompressor", "ratio"): _COMPRESSOR_RATIO,
+    ("fetCompressor", "knee"): _COMPRESSOR_DB,
+    ("fetCompressor", "kneeMulti"): lambda v: v / 25.0,
+    ("fetCompressor", "gain"): _COMPRESSOR_DB,
+    ("fetCompressor", "attack"): _COMPRESSOR_MS,
+    ("fetCompressor", "maxAttack"): _COMPRESSOR_MS,
+    ("fetCompressor", "release"): _COMPRESSOR_MS,
+    ("fetCompressor", "maxRelease"): _COMPRESSOR_MS,
+    ("fetCompressor", "crest"): _COMPRESSOR_MS,
+    ("fetCompressor", "adapt"): _COMPRESSOR_ADAPT,
+}
+
+_INT_SCALAR_CONV: dict[tuple[str, str], Any] = {
+    ("bass", "frequency"): lambda v: v + 15,
+    ("bassMono", "frequency"): lambda v: v + 15,
+    ("fieldSurround", "depth"): lambda v: v * 75 + 200,
+}
+
+_FLOAT_ARRAY_CONV: dict[tuple[str, str], Any] = {
+    ("multibandCompressor", "thresholds"): _COMPRESSOR_DB,
+    ("multibandCompressor", "ratios"): _COMPRESSOR_RATIO,
+    ("multibandCompressor", "gains"): _COMPRESSOR_DB,
+    ("multibandCompressor", "knees"): _COMPRESSOR_DB,
+    ("multibandCompressor", "kneeMultis"): lambda v: v / 25.0,
+    ("multibandCompressor", "attacks"): _COMPRESSOR_MS,
+    ("multibandCompressor", "maxAttacks"): _COMPRESSOR_MS,
+    ("multibandCompressor", "releases"): _COMPRESSOR_MS,
+    ("multibandCompressor", "maxReleases"): _COMPRESSOR_MS,
+    ("multibandCompressor", "crests"): _COMPRESSOR_MS,
+    ("multibandCompressor", "adapts"): _COMPRESSOR_ADAPT,
+    ("dynamicEq", "qs"): _div100,
+    ("dynamicEq", "gains"): lambda v: v / 10.0,
+    ("dynamicEq", "thresholds"): lambda v: v / 10.0,
+}
+
+
+def v2_to_21(v2: dict[str, Any]) -> dict[str, Any]:
+    """Convert v2 grouped json (legacy-encoded) to schema 2.1 semantic values."""
+    body: dict[str, Any] = {}
+    for key, value in v2.items():
+        if key in ("schemaVersion", "name"):
+            continue
+        if not isinstance(value, dict):
+            body[key] = value
+            continue
+        group_obj: dict[str, Any] = {}
+        for field, field_value in value.items():
+            slot = (key, field)
+            if slot in _FLOAT_SCALAR_CONV and isinstance(field_value, (int, float)):
+                group_obj[field] = _FLOAT_SCALAR_CONV[slot](float(field_value))
+            elif slot in _INT_SCALAR_CONV and isinstance(field_value, int):
+                group_obj[field] = _INT_SCALAR_CONV[slot](field_value)
+            elif slot in _FLOAT_ARRAY_CONV and isinstance(field_value, list):
+                conv = _FLOAT_ARRAY_CONV[slot]
+                group_obj[field] = [
+                    conv(float(x)) if isinstance(x, (int, float)) else x
+                    for x in field_value
+                ]
+            else:
+                group_obj[field] = field_value
+        body[key] = group_obj
+
+    result: dict[str, Any] = {"schemaVersion": 2.1}
+    if "name" in v2:
+        result["name"] = v2["name"]
+    result.update(body)
+    return result
+
+
+def _schema_version(obj: dict[str, Any]) -> float:
+    raw = obj.get("schemaVersion", 1)
+    if isinstance(raw, bool):
+        return 1.0
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if isinstance(raw, str):
+        try:
+            return float(raw)
+        except ValueError:
+            return 1.0
+    return 1.0
+
+
 def _detect_format(text: str) -> str:
     stripped = text.lstrip()
     if stripped.startswith("<"):
@@ -1283,23 +1428,35 @@ def convert(
     fmt: str,
     name: str | None,
     fill_defaults: bool,
+    target: str,
 ) -> dict[str, Any]:
     if fmt == "xml":
         if not xml_is_viper(text):
             raise ValueError(
                 "input is XML but not a recognised ViPER preset (no param 36868)"
             )
-        return v1_to_v2(xml_to_v1(text), False, name=name, fill_defaults=fill_defaults)
-    v1 = json.loads(text)
-    if not isinstance(v1, dict):
-        raise ValueError("v1 json must be a JSON object")
-    is_spk = "spkMasterEnabled" in v1
-    return v1_to_v2(v1, is_spk, name=name, fill_defaults=fill_defaults)
+        v2 = v1_to_v2(xml_to_v1(text), False, name=name, fill_defaults=fill_defaults)
+    else:
+        obj = json.loads(text)
+        if not isinstance(obj, dict):
+            raise ValueError("json input must be a JSON object")
+        schema = _schema_version(obj)
+        if schema >= 2.1:
+            if name is not None:
+                obj["name"] = name
+            return obj
+        if schema >= 2:
+            if name is not None:
+                obj["name"] = name
+            return v2_to_21(obj)
+        is_spk = "spkMasterEnabled" in obj
+        v2 = v1_to_v2(obj, is_spk, name=name, fill_defaults=fill_defaults)
+    return v2_to_21(v2) if target == "2.1" else v2
 
 
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Convert ViPER4Android v1 JSON / legacy XML presets to v2 grouped JSON.",
+        description="Convert ViPER4Android v1 JSON / legacy XML presets to grouped JSON.",
     )
     p.add_argument(
         "input",
@@ -1312,6 +1469,16 @@ def _build_parser() -> argparse.ArgumentParser:
         type=Path,
         default=None,
         help="output file (default: stdout)",
+    )
+    p.add_argument(
+        "--to",
+        dest="target",
+        choices=["2", "2.1"],
+        default="2",
+        help=(
+            "target schema version for v1/XML input: 2 (default) or 2.1; "
+            "schema 2 JSON input is always converted to 2.1"
+        ),
     )
     fmt = p.add_mutually_exclusive_group()
     fmt.add_argument(
@@ -1360,6 +1527,7 @@ def main(argv: list[str] | None = None) -> int:
             fmt=fmt,
             name=args.name,
             fill_defaults=args.fill_defaults,
+            target=args.target,
         )
     except (ValueError, json.JSONDecodeError) as e:
         print(f"error: {e}", file=sys.stderr)

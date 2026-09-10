@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.llsl.viper4android.data.repository.ViperRepository
+import com.llsl.viper4android.viper.ViperParams
 import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
@@ -218,10 +219,116 @@ private fun spSplitDoubles(
     return parts.mapNotNull { it.toDoubleOrNull() }
 }
 
+private fun convertOldPresetFloat(
+    pref: EffectPref<*>,
+    value: Float,
+    sourceSchema: Double,
+): Float {
+    if (sourceSchema >= PRESET_SCHEMA_VERSION) return value
+    return when (pref.paramId) {
+        ViperParams.PARAM_FET_COMPRESSOR_THRESHOLD,
+        ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_THRESHOLD,
+        -> compressorDbToRaw(value)
+
+        ViperParams.PARAM_FET_COMPRESSOR_RATIO,
+        ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_RATIO,
+        -> compressorRatioToRaw(value / 100.0f)
+
+        ViperParams.PARAM_FET_COMPRESSOR_KNEE,
+        ViperParams.PARAM_FET_COMPRESSOR_GAIN,
+        ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_KNEE,
+        ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_GAIN,
+        -> compressorDbToRaw(value)
+
+        ViperParams.PARAM_FET_COMPRESSOR_ATTACK,
+        ViperParams.PARAM_FET_COMPRESSOR_MAX_ATTACK,
+        ViperParams.PARAM_FET_COMPRESSOR_RELEASE,
+        ViperParams.PARAM_FET_COMPRESSOR_MAX_RELEASE,
+        ViperParams.PARAM_FET_COMPRESSOR_CREST,
+        ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_ATTACK,
+        ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_MAX_ATTACK,
+        ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_RELEASE,
+        ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_MAX_RELEASE,
+        ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_CREST,
+        -> compressorMsToSeconds(value)
+
+        ViperParams.PARAM_FET_COMPRESSOR_ADAPT,
+        ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_ADAPT,
+        -> compressorAdaptAmountToSeconds(value / 100.0f)
+
+        ViperParams.PARAM_MASTER_LIMITER_OUTPUT_VOLUME,
+        ViperParams.PARAM_MASTER_LIMITER_CHANNEL_PAN,
+        ViperParams.PARAM_MASTER_LIMITER_THRESHOLD,
+        ViperParams.PARAM_PLAYBACK_GAIN_CONTROL_STRENGTH,
+        ViperParams.PARAM_PLAYBACK_GAIN_CONTROL_MAX_GAIN,
+        ViperParams.PARAM_PLAYBACK_GAIN_CONTROL_OUTPUT_THRESHOLD,
+        ViperParams.PARAM_CONVOLVER_CROSS_CHANNEL,
+        ViperParams.PARAM_DIFF_SURROUND_WET_DRY_MIX,
+        ViperParams.PARAM_STEREO_IMAGER_LOW_WIDTH,
+        ViperParams.PARAM_STEREO_IMAGER_MID_WIDTH,
+        ViperParams.PARAM_STEREO_IMAGER_HIGH_WIDTH,
+        ViperParams.PARAM_REVERB_WET,
+        ViperParams.PARAM_REVERB_DRY,
+        ViperParams.PARAM_DYNAMIC_SYSTEM_SIDE_GAIN_LOW,
+        ViperParams.PARAM_DYNAMIC_SYSTEM_SIDE_GAIN_HIGH,
+        ViperParams.PARAM_PSYCHOACOUSTIC_BASS_INTENSITY,
+        ViperParams.PARAM_PSYCHOACOUSTIC_BASS_ORIGINAL_LEVEL,
+        ViperParams.PARAM_BASS_GAIN,
+        ViperParams.PARAM_BASS_MONO_GAIN,
+        ViperParams.PARAM_CLARITY_GAIN,
+        -> value / 100.0f
+
+        ViperParams.PARAM_LUFS_TARGET -> value / -10.0f
+
+        ViperParams.PARAM_LUFS_MAX_GAIN -> value / 10.0f
+
+        ViperParams.PARAM_FET_COMPRESSOR_KNEE_MULTI -> value / 25.0f
+
+        ViperParams.PARAM_MULTIBAND_COMPRESSOR_BAND_KNEE_MULTI -> value / 25.0f
+
+        ViperParams.PARAM_DYNAMIC_EQ_BAND_Q -> value / 100.0f
+
+        ViperParams.PARAM_DYNAMIC_EQ_BAND_GAIN,
+        ViperParams.PARAM_DYNAMIC_EQ_BAND_THRESHOLD,
+        -> value / 10.0f
+
+        ViperParams.PARAM_SPECTRUM_EXTENSION_EXCITER -> value / 100.0f * 5.6f
+
+        ViperParams.PARAM_DYNAMIC_SYSTEM_STRENGTH -> 1.0f + value / 100.0f * 20.0f
+
+        ViperParams.PARAM_FIELD_SURROUND_MID_IMAGE -> value / 10.0f + 1.0f
+
+        ViperParams.PARAM_REVERB_ROOM_SIZE,
+        ViperParams.PARAM_REVERB_WIDTH,
+        ViperParams.PARAM_REVERB_DAMP,
+        -> value / 10.0f
+
+        else -> value
+    }
+}
+
+private fun convertOldPresetInt(
+    pref: EffectPref<*>,
+    value: Int,
+    sourceSchema: Double,
+): Int {
+    if (sourceSchema >= PRESET_SCHEMA_VERSION) return value
+    return when (pref.paramId) {
+        ViperParams.PARAM_BASS_FREQUENCY,
+        ViperParams.PARAM_BASS_MONO_FREQUENCY,
+        -> value + 15
+
+        ViperParams.PARAM_FIELD_SURROUND_DEPTH -> value * 75 + 200
+
+        else -> value
+    }
+}
+
 suspend fun loadEffectPrefs(
     repository: ViperRepository,
     state: EffectState = EffectState(),
 ): EffectState {
+    migrateStoredEffectPrefs(repository)
     var s = state
     for (pref in EFFECT_PREFS) {
         s =
@@ -271,6 +378,58 @@ suspend fun loadEffectPrefs(
     return s
 }
 
+private suspend fun migrateStoredEffectPrefs(repository: ViperRepository) {
+    repository.editPreferences { prefs ->
+        val marker = booleanPreferencesKey(PREF_DSP_RAW_PARAMS_MIGRATED)
+        val existingMarker =
+            prefs
+                .asMap()
+                .entries
+                .firstOrNull { it.key.name == marker.name }
+                ?.value
+        if (existingMarker == true) return@editPreferences
+
+        for (pref in EFFECT_PREFS) {
+            when (pref) {
+                is FloatPref -> {
+                    val value =
+                        prefs
+                            .asMap()
+                            .entries
+                            .firstOrNull { it.key.name == pref.prefKey }
+                            ?.value
+                    if (value is Int) {
+                        prefs.remove(intPreferencesKey(pref.prefKey))
+                        prefs[floatPreferencesKey(pref.prefKey)] =
+                            pref.clamp(convertOldPresetFloat(pref, value.toFloat(), 0.0))
+                    }
+                }
+
+                is FloatListPref -> {
+                    val key = stringPreferencesKey(pref.prefKey)
+                    val raw =
+                        prefs
+                            .asMap()
+                            .entries
+                            .firstOrNull { it.key.name == pref.prefKey }
+                            ?.value as? String
+                    if (raw != null) {
+                        val converted =
+                            spSplitFloats(raw, pref.defaultValue).map {
+                                pref.clampElement(convertOldPresetFloat(pref, it, 0.0))
+                            }
+                        prefs[key] = spJoinFloats(converted)
+                    }
+                }
+
+                else -> {}
+            }
+        }
+
+        prefs[marker] = true
+    }
+}
+
 suspend fun saveEffectPrefs(
     repository: ViperRepository,
     state: EffectState,
@@ -292,7 +451,8 @@ suspend fun saveEffectPrefs(
     }
 }
 
-const val PRESET_SCHEMA_VERSION = 2
+const val PRESET_SCHEMA_VERSION = 2.1
+private const val PREF_DSP_RAW_PARAMS_MIGRATED = "dsp_raw_params_migrated"
 private const val KEY_SCHEMA_VERSION = "schemaVersion"
 private const val KEY_NAME = "name"
 private const val KEY_CREATED_AT = "createdAt"
@@ -380,7 +540,7 @@ fun deserializeEffectPrefs(
     for (group in EFFECT_GROUPS) {
         val sub = obj.optJSONObject(group.effectKey) ?: continue
         for (pref in group.prefs) {
-            s = applyPrefFromJson(s, pref, sub)
+            s = applyPrefFromJson(s, pref, sub, sourceSchema)
         }
     }
     return s
@@ -390,15 +550,18 @@ private fun applyPrefFromJson(
     state: EffectState,
     pref: EffectPref<*>,
     obj: JSONObject,
+    sourceSchema: Double,
 ): EffectState {
     if (!obj.has(pref.jsonKey)) return state
     return when (pref) {
         is IntPref -> {
-            pref.set(state, pref.clamp(obj.optInt(pref.jsonKey, pref.get(state))))
+            val raw = obj.optInt(pref.jsonKey, pref.get(state))
+            pref.set(state, pref.clamp(convertOldPresetInt(pref, raw, sourceSchema)))
         }
 
         is FloatPref -> {
-            pref.set(state, pref.clamp(obj.optDouble(pref.jsonKey, pref.get(state).toDouble()).toFloat()))
+            val raw = obj.optDouble(pref.jsonKey, pref.get(state).toDouble()).toFloat()
+            pref.set(state, pref.clamp(convertOldPresetFloat(pref, raw, sourceSchema)))
         }
 
         is BoolPref -> {
@@ -432,7 +595,7 @@ private fun applyPrefFromJson(
             val list = mutableListOf<Float>()
             for (i in 0 until arr.length()) {
                 val raw = arr.optDouble(i, 0.0).toFloat()
-                list.add(pref.clampElement(arr.optDouble(i, 0.0).toFloat()))
+                list.add(pref.clampElement(convertOldPresetFloat(pref, raw, sourceSchema)))
             }
             pref.set(state, list.toList())
         }
