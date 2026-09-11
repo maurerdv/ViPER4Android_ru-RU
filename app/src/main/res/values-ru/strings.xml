@@ -237,7 +237,7 @@
     <string name="settings_excluded_apps">Исключенные приложения</string>
     <string name="settings_import_preset">Импортировать профиль</string>
     <string name="settings_import_kernel">Импортировать импульс</string>
-    <string name="settings_import_vdc">Импортировать VDC</string>     
+    <string name="settings_import_vdc">Импортировать VDC</string>
     <string name="settings_auto_start_desc">Запуск аудиослужбы V4A при загрузке устройства</string>
     <string name="settings_global_mode_desc">Применять эффекты глобально для всей системы</string>
     <string name="settings_excluded_apps_desc">Пропускать аудиосессии для выбранных приложений</string>
@@ -281,7 +281,6 @@
     <string name="device_label_last_conn">Последнее подключение</string>
     <string name="device_no_devices">Нет сохранённых устройств</string>
     <string name="device_rename_title">Переименование устройства</string>
-    <string name="device_rename_hint">Имя устройства</string>
     <string name="device_update_title">Обновление пресета устройства</string>
     <string name="device_update_confirm">Перезаписать пресет «%1$s» текущими настройками? Это действие нельзя отменить.</string>
     <string name="device_load_title">Загрузка пресета устройства</string>

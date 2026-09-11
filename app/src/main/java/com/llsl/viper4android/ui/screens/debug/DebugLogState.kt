@@ -24,6 +24,7 @@ import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.time.Duration.Companion.milliseconds
 
 private const val TAG = "DebugLogState"
 private const val MAX_BUFFERED_ENTRIES = 2000
@@ -215,7 +216,7 @@ internal class DebugLogState {
                 commitBatch(pending)
                 pending.clear()
             }
-            delay(COMMIT_INTERVAL_MS)
+            delay(COMMIT_INTERVAL_MS.milliseconds)
         }
     }
 

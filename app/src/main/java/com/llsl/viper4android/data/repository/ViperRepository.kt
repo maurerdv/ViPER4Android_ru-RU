@@ -42,13 +42,9 @@ class ViperRepository
 
         suspend fun getPresetById(id: Long): Preset? = presetDao.getById(id)
 
-        suspend fun getPresetByName(name: String): Preset? = presetDao.getByName(name)
-
         suspend fun savePreset(preset: Preset): Long = presetDao.insert(preset)
 
         suspend fun updatePreset(preset: Preset) = presetDao.update(preset)
-
-        suspend fun deletePreset(preset: Preset) = presetDao.delete(preset)
 
         suspend fun deletePresetById(id: Long) = presetDao.deleteById(id)
 
@@ -60,11 +56,6 @@ class ViperRepository
 
         suspend fun saveEqPreset(preset: EqPreset): Long = eqPresetDao.insert(preset)
 
-        suspend fun renameEqPreset(
-            id: Long,
-            name: String,
-        ) = eqPresetDao.rename(id, name)
-
         suspend fun deleteEqPresetById(id: Long) = eqPresetDao.deleteById(id)
 
         fun getAllDsPresets(): Flow<List<DsPreset>> = dsPresetDao.getAll()
@@ -72,11 +63,6 @@ class ViperRepository
         suspend fun getDsPresetById(id: Long): DsPreset? = dsPresetDao.getById(id)
 
         suspend fun saveDsPreset(preset: DsPreset): Long = dsPresetDao.insert(preset)
-
-        suspend fun renameDsPreset(
-            id: Long,
-            name: String,
-        ) = dsPresetDao.rename(id, name)
 
         suspend fun deleteDsPresetById(id: Long) = dsPresetDao.deleteById(id)
 

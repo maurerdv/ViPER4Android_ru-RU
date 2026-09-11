@@ -281,7 +281,6 @@
     <string name="device_label_last_conn">上次连接</string>
     <string name="device_no_devices">无已保存设备</string>
     <string name="device_rename_title">重命名设备</string>
-    <string name="device_rename_hint">设备名称</string>
     <string name="device_update_title">更新设备预设</string>
     <string name="device_update_confirm">确定用当前设置覆盖 "%1$s"? 此操作无法撤销</string>
     <string name="device_load_title">加载设备预设</string>
@@ -309,7 +308,7 @@
     <string name="debug_export_title">导出日志</string>
     <string name="debug_export_confirm">将应用和驱动日志保存到外部存储?\n\n%1$s\n%2$s</string>
     <string name="debug_export_action">导出</string>
-    <string name="debug_export_done">日志已导出到 %1$s</string>
+    <string name="debug_export_done">日志已导出到 %1$s</string>z
     <string name="debug_export_failed">导出失败</string>
 
     <!-- Debug filters -->

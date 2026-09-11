@@ -26,13 +26,6 @@ object RootShell {
         return process
     }
 
-    fun startShell(): Process {
-        val su = getSuPath()
-        return ProcessBuilder(su)
-            .redirectErrorStream(true)
-            .start()
-    }
-
     fun getSuPath(): String {
         cachedSuPath?.let { return it }
         synchronized(this) {
@@ -97,32 +90,5 @@ object RootShell {
         } catch (_: Exception) {
             false
         }
-    }
-
-    fun copyFile(
-        src: File,
-        destPath: String,
-    ) {
-        val destFile = File(destPath)
-        val destDir = destFile.parentFile
-        val tmpPath = "$destPath.tmp"
-        val tmpFile = File(tmpPath)
-        try {
-            if (destDir != null && destDir.canWrite()) {
-                if (!destDir.exists()) destDir.mkdirs()
-                src.copyTo(tmpFile, overwrite = true)
-                tmpFile.renameTo(destFile)
-                destFile.setReadable(true, false)
-                FileLogger.i(TAG, "Direct copy OK: $destPath")
-                return
-            }
-        } catch (_: Exception) {
-            FileLogger.d(TAG, "Direct copy failed for $destPath, trying su")
-        }
-        val safeSrc = src.absolutePath.replace("'", "")
-        val safeDest = destPath.replace("'", "")
-        val safeTmp = tmpPath.replace("'", "")
-        exec("cp '$safeSrc' '$safeTmp' && mv '$safeTmp' '$safeDest' && chmod 644 '$safeDest'")
-        FileLogger.i(TAG, "su copy OK: $destPath")
     }
 }

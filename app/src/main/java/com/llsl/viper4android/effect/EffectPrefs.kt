@@ -148,16 +148,6 @@ class DoubleListPref(
 val EFFECT_PREFS: List<EffectPref<*>> =
     listOf(Effects.masterEnable) + EFFECT_GROUPS.flatMap { it.prefs }
 
-val EFFECT_PREFS_BY_PARAM_ID: Map<Int, EffectPref<*>> =
-    EFFECT_PREFS
-        .filter {
-            it.paramId != -1 &&
-                it !is IntListPref &&
-                it !is FloatListPref &&
-                it !is BoolListPref &&
-                it !is DoubleListPref
-        }.associateBy { it.paramId }
-
 val ENABLE_PREF_BY_EFFECT_KEY: Map<String, BoolPref> =
     EFFECT_GROUPS
         .mapNotNull { group ->

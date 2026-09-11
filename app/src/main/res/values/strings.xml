@@ -281,7 +281,6 @@
     <string name="device_label_last_conn">Last Connected</string>
     <string name="device_no_devices">No saved devices</string>
     <string name="device_rename_title">Rename Device</string>
-    <string name="device_rename_hint">Device name</string>
     <string name="device_update_title">Update Device Preset</string>
     <string name="device_update_confirm">Overwrite "%1$s" preset with current settings? This cannot be undone.</string>
     <string name="device_load_title">Load Device Preset</string>

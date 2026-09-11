@@ -114,7 +114,6 @@ private val EffectHeaderIconSize = UiDimens.IconMedium
 private val EffectHeaderIconSpacing = UiDimens.Large
 private val EffectHeaderHorizontalPadding = EffectHorizontalPadding
 private val EffectHeaderVerticalPadding = UiDimens.Large
-private val EffectHelpIconSize = UiDimens.IconLarge
 private val EffectSwitchPlaceholderHeight = UiDimens.SwitchSlotHeight
 
 private fun scaleToDb(scale: Number): Double = 20.0 * log10(scale.toDouble())
@@ -2262,7 +2261,7 @@ fun ViperBassSection(
                 onValueChange = { viewModel.applyPref(Effects.bass.frequency, it.roundToInt()) },
                 valueRange = 15f..150f,
                 steps = 134,
-                valueLabel = "${frequency} Hz",
+                valueLabel = "$frequency Hz",
                 edit =
                     SliderEdit(
                         displayValue = frequency.toDouble(),
@@ -2335,7 +2334,7 @@ fun ViperBassMonoSection(
                 onValueChange = { viewModel.applyPref(Effects.bassMono.frequency, it.roundToInt()) },
                 valueRange = 15f..150f,
                 steps = 134,
-                valueLabel = "${frequency} Hz",
+                valueLabel = "$frequency Hz",
                 edit =
                     SliderEdit(
                         displayValue = frequency.toDouble(),

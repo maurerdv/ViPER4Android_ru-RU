@@ -1,6 +1,5 @@
 package com.llsl.viper4android.utils
 
-import java.io.InputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -31,11 +30,6 @@ data class DecodedWav(
 object WavDecoder {
     private const val FORMAT_PCM = 1
     private const val FORMAT_IEEE_FLOAT = 3
-
-    fun decode(stream: InputStream): DecodedWav {
-        val all = stream.readBytes()
-        return decode(all)
-    }
 
     fun decode(bytes: ByteArray): DecodedWav {
         if (bytes.size < 44) {

@@ -54,9 +54,6 @@ object ViperControlClient {
         return binder
     }
 
-    val isAvailable: Boolean
-        get() = service() != null
-
     private fun transact(
         code: Int,
         write: (Parcel) -> Unit,
