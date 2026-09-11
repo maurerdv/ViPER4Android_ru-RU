@@ -80,7 +80,7 @@
 
     <!-- DDC -->
     <string name="section_ddc">Цифровая коррекция</string>
-    <string name="label_ddc_device">Профиль цифровой коррекции(DDC)</string>
+    <string name="label_ddc_device">Профиль цифровой коррекции</string>
 
     <!-- Spectrum Extension -->
     <string name="section_spectrum_extension">Расширение спектра</string>
