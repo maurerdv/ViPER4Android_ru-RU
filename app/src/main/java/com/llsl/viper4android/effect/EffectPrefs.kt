@@ -165,6 +165,16 @@ val ENABLE_PREF_BY_EFFECT_KEY: Map<String, BoolPref> =
             enable?.let { group.effectKey to it }
         }.toMap()
 
+private fun ensureBandCount(
+    rawBands: List<Double>,
+    expectedCount: Int,
+): List<Double> =
+    if (rawBands.size != expectedCount) {
+        List(expectedCount) { 0.0 }
+    } else {
+        rawBands
+    }
+
 private fun spJoinInts(list: List<Int>): String = list.joinToString(";")
 
 private fun spJoinFloats(list: List<Float>): String =
@@ -324,7 +334,7 @@ private fun convertOldPresetInt(
     }
 }
 
-suspend fun loadEffectPrefs(
+suspend fun loadEffectStateFromPrefs(
     repository: ViperRepository,
     state: EffectState = EffectState(),
 ): EffectState {
@@ -375,7 +385,8 @@ suspend fun loadEffectPrefs(
                 }
             }
     }
-    return s
+    val eqBands = ensureBandCount(s.eq.bands, s.eq.bandCount)
+    return s.copy(eq = s.eq.copy(bands = eqBands))
 }
 
 private suspend fun migrateStoredEffectPrefs(repository: ViperRepository) {

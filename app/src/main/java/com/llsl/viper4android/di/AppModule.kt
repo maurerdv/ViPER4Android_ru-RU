@@ -14,7 +14,7 @@ import com.llsl.viper4android.data.dao.PresetDao
 import com.llsl.viper4android.data.db.ViperDatabase
 import com.llsl.viper4android.data.model.DsPreset
 import com.llsl.viper4android.data.model.EqPreset
-import com.llsl.viper4android.viper.ViperDispatcher
+import com.llsl.viper4android.effect.BuiltinPresets
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -81,7 +81,7 @@ object AppModule {
 
     private suspend fun seedEqPresets(dao: EqPresetDao) {
         val presets = mutableListOf<EqPreset>()
-        for (builtin in ViperDispatcher.BUILTIN_EQ_PRESETS) {
+        for (builtin in BuiltinPresets.BUILTIN_EQ_PRESETS) {
             val bandsByCount =
                 mapOf(
                     10 to builtin.bands10,
@@ -105,7 +105,7 @@ object AppModule {
 
     private suspend fun seedDsPresets(dao: DsPresetDao) {
         val presets =
-            ViperDispatcher.BUILTIN_DS_PRESETS.map { builtin ->
+            BuiltinPresets.BUILTIN_DS_PRESETS.map { builtin ->
                 DsPreset(
                     name = builtin.key,
                     nameKey = builtin.key,

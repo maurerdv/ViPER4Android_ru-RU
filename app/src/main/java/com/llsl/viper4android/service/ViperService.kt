@@ -6,9 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Binder
 import android.os.IBinder
-import android.util.SparseArray
 import androidx.core.app.NotificationCompat
-import androidx.core.util.size
 import androidx.lifecycle.LifecycleService
 import androidx.lifecycle.lifecycleScope
 import com.llsl.viper4android.R
@@ -20,14 +18,18 @@ import com.llsl.viper4android.data.model.DeviceSettings
 import com.llsl.viper4android.data.repository.ViperRepository
 import com.llsl.viper4android.effect.EffectState
 import com.llsl.viper4android.effect.deserializeEffectPrefs
+import com.llsl.viper4android.effect.loadEffectStateFromPrefs
 import com.llsl.viper4android.effect.serializeEffectPrefs
 import com.llsl.viper4android.utils.FileLogger
 import com.llsl.viper4android.utils.WavDecoder
-import com.llsl.viper4android.viper.ViperControlClient
-import com.llsl.viper4android.viper.ViperDispatcher
-import com.llsl.viper4android.viper.ViperEffect
+import com.llsl.viper4android.viper.AidlTransport
+import com.llsl.viper4android.viper.BulkKind
+import com.llsl.viper4android.viper.DriverStatus
+import com.llsl.viper4android.viper.EffectRegistry
+import com.llsl.viper4android.viper.HidlTransport
+import com.llsl.viper4android.viper.ParamValue
 import com.llsl.viper4android.viper.ViperParams
-import com.llsl.viper4android.viper.ViperParamsSerializer
+import com.llsl.viper4android.viper.ViperTransport
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -77,16 +79,14 @@ class ViperService : LifecycleService() {
     }
 
     private val binder = LocalBinder()
-    private val sessions = SparseArray<ViperEffect>()
-    private var globalEffect: ViperEffect? = null
+    private val effectRegistry = EffectRegistry()
+    private lateinit var transport: ViperTransport
     private var useAidlTypeUuid: Boolean = true
     private var globalMode: Boolean = false
     private var audioOutputDetector: AudioOutputDetector? = null
     private var sessionMonitor: AudioSessionMonitor? = null
     private var stateProvider: (() -> EffectState)? = null
     private var lastUiState: EffectState? = null
-    private var lastBulkDdcKey: String? = null
-    private var lastBulkConvolverKey: String? = null
 
     @Volatile
     private var excludedApps: Set<String> = emptySet()
@@ -147,7 +147,7 @@ class ViperService : LifecycleService() {
         lifecycleScope.launch {
             ensureConfigLoaded()
             if (masterEnabled) {
-                val state = ViperDispatcher.loadFullStateFromPrefs(repository)
+                val state = loadEffectStateFromPrefs(repository)
                 applyState(state, true)
             }
             startAudioOutputMonitor()
@@ -159,6 +159,16 @@ class ViperService : LifecycleService() {
     private suspend fun ensureConfigLoaded() {
         if (configLoaded) return
         useAidlTypeUuid = repository.aidlMode
+        effectRegistry.aidlTypeUuid = useAidlTypeUuid
+        transport =
+            if (useAidlTypeUuid) {
+                AidlTransport()
+            } else {
+                HidlTransport(
+                    { effectRegistry.liveEffects() },
+                    activeEffect = { effectRegistry.activeEffect() },
+                )
+            }.also { installBulkSideChannels(it) }
         globalMode = repository.getBooleanPreference(ViperRepository.PREF_GLOBAL_MODE).first()
         bootMasterEnabled = repository.getBooleanPreference(ViperRepository.PREF_MASTER_ENABLE).first()
         configLoaded = true
@@ -170,17 +180,14 @@ class ViperService : LifecycleService() {
     }
 
     private fun initGlobalEffect() {
-        val typeUuid =
-            if (useAidlTypeUuid) ViperEffect.EFFECT_TYPE_UUID_AIDL else ViperEffect.EFFECT_TYPE_UUID
-        val effect = ViperEffect(0, typeUuid)
-        if (!effect.create()) {
-            FileLogger.e("Service", "Failed to create global effect")
-            return
+        effectRegistry.ensureGlobal()
+    }
+
+    private fun installBulkSideChannels(t: ViperTransport) {
+        t.bulkSideChannels = { ddc, kernel, force ->
+            if (ddc.isNotEmpty()) applyDdcDevice(ddc, force)
+            if (kernel.isNotEmpty()) applyConvolverKernel(kernel, force)
         }
-        globalEffect = effect
-        FileLogger.i("Service", "Global effect created (aidlType=$useAidlTypeUuid)")
-        lastBulkConvolverKey = null
-        lastBulkDdcKey = null
     }
 
     private fun applyState(
@@ -190,40 +197,16 @@ class ViperService : LifecycleService() {
         if (!masterOn) {
             stopSessionMonitor()
             releaseAllSessions()
-            globalEffect?.let {
-                it.enabled = false
-                it.release()
-            }
-            globalEffect = null
+            effectRegistry.releaseGlobal()
             return
         }
         if (globalMode) {
-            if (globalEffect == null) initGlobalEffect()
+            if (effectRegistry.globalEffect() == null) initGlobalEffect()
         } else {
             if (sessionMonitor == null) startSessionMonitor()
         }
-        var binderWritten = false
-        globalEffect?.let { effect ->
-            effect.enabled = true
-            if (useAidlTypeUuid) {
-                applyFullStateAidl(state)
-                binderWritten = true
-            } else {
-                applyFullStateHidl(effect, state, true)
-            }
-        }
-        for (i in 0 until sessions.size) {
-            val effect = sessions.valueAt(i)
-            effect.enabled = true
-            if (useAidlTypeUuid) {
-                if (!binderWritten) {
-                    applyFullStateAidl(state)
-                    binderWritten = true
-                }
-            } else {
-                applyFullStateHidl(effect, state, true)
-            }
-        }
+        effectRegistry.liveEffects().forEach { it.enabled = true }
+        transport.pushFullState(state)
     }
 
     private var currentServiceDeviceId: String = AudioDevice.ID_SPEAKER
@@ -251,14 +234,14 @@ class ViperService : LifecycleService() {
         val state: EffectState =
             if (saved != null) {
                 FileLogger.i("Service", "Loading device settings from DB for ${device.id}")
-                val baseState = ViperDispatcher.loadFullStateFromPrefs(repository)
+                val baseState = loadEffectStateFromPrefs(repository)
                 val json = JSONObject(saved.settingsJson)
                 deserializeEffectPrefs(json, baseState).also {
                     repository.updateDeviceLastConnected(device.id)
                 }
             } else {
                 FileLogger.i("Service", "No DB entry for ${device.id}, using DataStore defaults")
-                val s = ViperDispatcher.loadFullStateFromPrefs(repository)
+                val s = loadEffectStateFromPrefs(repository)
                 val json = serializeEffectPrefs(s)
                 repository.saveDeviceSettings(
                     DeviceSettings(
@@ -273,43 +256,11 @@ class ViperService : LifecycleService() {
         applyState(state, masterEnabled)
     }
 
-    private suspend fun dispatchFullStateToEffect(effect: ViperEffect) {
-        val state = ViperDispatcher.loadFullStateFromPrefs(repository)
-        val isMasterOn = masterEnabled
-        effect.enabled = isMasterOn
+    private suspend fun dispatchFullStateToEffect() {
+        if (!masterEnabled) return
+        val state = loadEffectStateFromPrefs(repository)
         lastUiState = state
-        if (useAidlTypeUuid) {
-            applyFullStateAidl(state)
-            return
-        }
-        applyFullStateHidl(effect, state, isMasterOn)
-    }
-
-    private fun applyFullStateAidl(state: EffectState) {
-        ViperControlClient.dispatchParam(
-            ViperParams.PARAM_SET_FULL_PARAMS,
-            ViperParamsSerializer.toByteArray(state),
-        )
-        if (state.ddc.enable && state.ddc.device.isNotEmpty()) {
-            applyDdcDevice(state.ddc.device)
-        }
-        if (state.convolver.enable && state.convolver.kernelFile.isNotEmpty()) {
-            applyConvolverKernel(state.convolver.kernelFile)
-        }
-    }
-
-    private fun applyFullStateHidl(
-        effect: ViperEffect,
-        state: EffectState,
-        masterEnabled: Boolean,
-    ) {
-        ViperDispatcher.dispatchFullState(effect, state, masterEnabled)
-        if (state.ddc.enable && state.ddc.device.isNotEmpty()) {
-            applyDdcDevice(state.ddc.device, effect = effect)
-        }
-        if (state.convolver.enable && state.convolver.kernelFile.isNotEmpty()) {
-            applyConvolverKernel(state.convolver.kernelFile, effect = effect)
-        }
+        transport.pushFullState(state)
     }
 
     override fun onStartCommand(
@@ -326,11 +277,7 @@ class ViperService : LifecycleService() {
 
             ACTION_STOP -> {
                 releaseAllSessions()
-                globalEffect?.let {
-                    it.enabled = false
-                    it.release()
-                }
-                globalEffect = null
+                effectRegistry.releaseGlobal()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()
             }
@@ -340,7 +287,7 @@ class ViperService : LifecycleService() {
                 lifecycleScope.launch {
                     ensureConfigLoaded()
                     bootMasterEnabled = next
-                    val state = ViperDispatcher.loadFullStateFromPrefs(repository)
+                    val state = loadEffectStateFromPrefs(repository)
                     stateProvider = null
                     lastUiState = state
                     applyState(state, next)
@@ -354,11 +301,7 @@ class ViperService : LifecycleService() {
         stopSessionMonitor()
         audioOutputDetector?.stop()
         audioOutputDetector = null
-        globalEffect?.let {
-            it.enabled = false
-            it.release()
-        }
-        globalEffect = null
+        effectRegistry.releaseGlobal()
         releaseAllSessions()
         FileLogger.i("Service", "Service destroyed")
         super.onDestroy()
@@ -406,201 +349,31 @@ class ViperService : LifecycleService() {
             )
             return
         }
-        if (sessions.get(sessionId) != null) {
+        if (effectRegistry.isSessionOpen(sessionId)) {
             FileLogger.w("Service", "Session $sessionId already open")
             return
         }
 
-        val typeUuid =
-            if (useAidlTypeUuid) ViperEffect.EFFECT_TYPE_UUID_AIDL else ViperEffect.EFFECT_TYPE_UUID
-        val effect = ViperEffect(sessionId, typeUuid)
-        if (!effect.create()) {
-            FileLogger.e("Service", "Failed to create effect for session $sessionId ($packageName)")
-            return
-        }
-
-        sessions.put(sessionId, effect)
-        FileLogger.i("Service", "Opened session $sessionId for $packageName")
-        lastBulkConvolverKey = null
-        lastBulkDdcKey = null
+        effectRegistry.openSession(sessionId, packageName) ?: return
 
         lifecycleScope.launch {
-            dispatchFullStateToEffect(effect)
+            dispatchFullStateToEffect()
             FileLogger.i("Service", "Applied full state to session $sessionId")
         }
     }
 
     private fun closeSession(sessionId: Int) {
-        val effect = sessions.get(sessionId) ?: return
-        effect.enabled = false
-        effect.release()
-        sessions.remove(sessionId)
-        FileLogger.i("Service", "Closed session $sessionId")
+        effectRegistry.closeSession(sessionId)
     }
 
     private fun releaseAllSessions() {
-        for (i in 0 until sessions.size) {
-            val effect = sessions.valueAt(i)
-            effect.enabled = false
-            effect.release()
-        }
-        sessions.clear()
+        effectRegistry.releaseAll()
     }
 
-    fun dispatchParam(
+    fun setParam(
         param: Int,
-        value: Int,
-    ) {
-        if (useAidlTypeUuid) {
-            ViperControlClient.dispatchParam(param, value)
-            return
-        }
-
-        fun send(effect: ViperEffect) {
-            effect.setParameter(param, value)
-        }
-        globalEffect?.let(::send)
-        for (i in 0 until sessions.size) {
-            send(sessions.valueAt(i))
-        }
-    }
-
-    fun dispatchParam(
-        param: Int,
-        value: Boolean,
-    ) {
-        if (useAidlTypeUuid) {
-            ViperControlClient.dispatchParam(param, value)
-            return
-        }
-
-        fun send(effect: ViperEffect) {
-            effect.setParameter(param, value)
-        }
-        globalEffect?.let(::send)
-        for (i in 0 until sessions.size) {
-            send(sessions.valueAt(i))
-        }
-    }
-
-    fun dispatchParam(
-        param: Int,
-        value: Float,
-    ) {
-        if (useAidlTypeUuid) {
-            ViperControlClient.dispatchParam(param, value)
-            return
-        }
-
-        fun send(effect: ViperEffect) {
-            effect.setParameter(param, value)
-        }
-        globalEffect?.let(::send)
-        for (i in 0 until sessions.size) {
-            send(sessions.valueAt(i))
-        }
-    }
-
-    fun dispatchParam(
-        param: Int,
-        index: Int,
-        value: Int,
-    ) {
-        if (useAidlTypeUuid) {
-            ViperControlClient.dispatchParam(param, index, value)
-            return
-        }
-
-        fun send(effect: ViperEffect) {
-            effect.setParameter(param, index, value)
-        }
-        globalEffect?.let(::send)
-        for (i in 0 until sessions.size) {
-            send(sessions.valueAt(i))
-        }
-    }
-
-    fun dispatchParam(
-        param: Int,
-        index: Int,
-        value: Boolean,
-    ) {
-        if (useAidlTypeUuid) {
-            ViperControlClient.dispatchParam(param, index, value)
-            return
-        }
-
-        fun send(effect: ViperEffect) {
-            effect.setParameter(param, index, value)
-        }
-        globalEffect?.let(::send)
-        for (i in 0 until sessions.size) {
-            send(sessions.valueAt(i))
-        }
-    }
-
-    fun dispatchParam(
-        param: Int,
-        index: Int,
-        value: Float,
-    ) {
-        if (useAidlTypeUuid) {
-            ViperControlClient.dispatchParam(param, index, value)
-            return
-        }
-
-        fun send(effect: ViperEffect) {
-            effect.setParameter(param, index, value)
-        }
-        globalEffect?.let(::send)
-        for (i in 0 until sessions.size) {
-            send(sessions.valueAt(i))
-        }
-    }
-
-    fun dispatchParam(
-        param: Int,
-        val1: Int,
-        val2: Int,
-        val3: Int,
-    ) {
-        if (useAidlTypeUuid) {
-            ViperControlClient.dispatchParam(param, val1, val2, val3)
-            return
-        }
-        globalEffect?.setParameter(param, val1, val2, val3)
-        for (i in 0 until sessions.size) {
-            sessions.valueAt(i).setParameter(param, val1, val2, val3)
-        }
-    }
-
-    fun dispatchParam(
-        param: Int,
-        value: ByteArray,
-    ) {
-        if (useAidlTypeUuid) {
-            ViperControlClient.dispatchParam(param, value)
-            return
-        }
-        globalEffect?.setParameter(param, value)
-        for (i in 0 until sessions.size) {
-            sessions.valueAt(i).setParameter(param, value)
-        }
-    }
-
-    fun dispatchParam(
-        param: Int,
-        value: FloatArray,
-    ) {
-        if (useAidlTypeUuid) {
-            ViperControlClient.dispatchParam(param, value)
-            return
-        }
-        globalEffect?.setParameter(param, value)
-        for (i in 0 until sessions.size) {
-            sessions.valueAt(i).setParameter(param, value)
-        }
-    }
+        value: ParamValue,
+    ) = transport.set(param, value)
 
     fun dispatchFullState(state: EffectState) {
         applyState(state, masterEnabled)
@@ -654,24 +427,14 @@ class ViperService : LifecycleService() {
     fun applyConvolverKernel(
         fileName: String,
         force: Boolean = false,
-        effect: ViperEffect? = null,
     ) {
-        if (fileName == lastBulkConvolverKey && !force) return
+        if (!transport.shouldStream(BulkKind.CONVOLVER, fileName, force)) return
         val sendInts: (Int, Int, Int, Int) -> Unit =
-            if (effect != null) {
-                { p, a, b, c -> effect.setParameter(p, a, b, c) }
-            } else {
-                { p, a, b, c -> dispatchParam(p, a, b, c) }
-            }
+            { p, a, b, c -> transport.set(p, ParamValue.Ints(intArrayOf(a, b, c))) }
         val sendFloats: (Int, FloatArray) -> Unit =
-            if (effect != null) {
-                { p, v -> effect.setParameter(p, v) }
-            } else {
-                { p, v -> dispatchParam(p, v) }
-            }
+            { p, v -> transport.set(p, ParamValue.Floats(v)) }
         if (fileName.isEmpty()) {
             sendInts(ViperParams.PARAM_CONVOLVER_PREPARE_BUFFER, 0, 0, 1)
-            lastBulkConvolverKey = null
             return
         }
         val src = File(File(getExternalFilesDir(null), "Kernel"), fileName)
@@ -727,7 +490,7 @@ class ViperService : LifecycleService() {
             val kernelId = fileName.hashCode()
             sendInts(ViperParams.PARAM_CONVOLVER_COMMIT_BUFFER, totalFloats, crc, kernelId)
             FileLogger.i("Service", "Kernel streamed: $fileName chunks=$chunkIndex crc=0x${crc.toUInt().toString(16)}")
-            lastBulkConvolverKey = fileName
+            transport.markStreamed(BulkKind.CONVOLVER, fileName)
         } catch (e: Exception) {
             FileLogger.e("Service", "Failed to stream kernel: $fileName", e)
         }
@@ -736,18 +499,12 @@ class ViperService : LifecycleService() {
     fun applyDdcDevice(
         name: String,
         force: Boolean = false,
-        effect: ViperEffect? = null,
     ) {
-        if (name == lastBulkDdcKey && !force) return
+        if (!transport.shouldStream(BulkKind.DDC, name, force)) return
         val sendFloats: (Int, FloatArray) -> Unit =
-            if (effect != null) {
-                { p, v -> effect.setParameter(p, v) }
-            } else {
-                { p, v -> dispatchParam(p, v) }
-            }
+            { p, v -> transport.set(p, ParamValue.Floats(v)) }
         if (name.isEmpty()) {
             sendFloats(ViperParams.PARAM_DDC_COEFFICIENTS, FloatArray(0))
-            lastBulkDdcKey = null
             return
         }
         val file = File(File(getExternalFilesDir(null), "DDC"), "$name.vdc")
@@ -764,17 +521,10 @@ class ViperService : LifecycleService() {
         for (s in sec44100) for (v in s) coeffs[i++] = v
         for (s in sec48000) for (v in s) coeffs[i++] = v
         sendFloats(ViperParams.PARAM_DDC_COEFFICIENTS, coeffs)
-        lastBulkDdcKey = name
+        transport.markStreamed(BulkKind.DDC, name)
     }
 
-    fun getActiveEffect(): ViperEffect? {
-        globalEffect?.let { if (it.isCreated) return it }
-        for (i in 0 until sessions.size) {
-            val effect = sessions.valueAt(i)
-            if (effect.isCreated) return effect
-        }
-        return null
-    }
+    fun probeDriverStatus(): DriverStatus? = transport.probeStatus()
 
     fun setGlobalMode(enabled: Boolean) {
         globalMode = enabled
@@ -786,14 +536,10 @@ class ViperService : LifecycleService() {
             stopSessionMonitor()
             releaseAllSessions()
         } else {
-            globalEffect?.let {
-                it.enabled = false
-                it.release()
-            }
-            globalEffect = null
+            effectRegistry.releaseGlobal()
         }
         lifecycleScope.launch {
-            applyState(ViperDispatcher.loadFullStateFromPrefs(repository), true)
+            applyState(loadEffectStateFromPrefs(repository), true)
         }
     }
 

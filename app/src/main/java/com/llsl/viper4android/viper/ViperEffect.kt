@@ -94,135 +94,32 @@ class ViperEffect(
             effect?.enabled = value
         }
 
-    fun setParameter(
-        param: Int,
-        value: Int,
-    ) {
-        val fx = effect ?: return
-        val m = setParamMethod ?: return
-        with(fx) { with(m) { invokeParam(intToBytes(param), ViperParamPayload.int(value), "setParameter($param, $value)") } }
-    }
-
-    fun setParameter(
-        param: Int,
-        value: Boolean,
-    ) {
-        val fx = effect ?: return
-        val m = setParamMethod ?: return
-        with(fx) { with(m) { invokeParam(intToBytes(param), ViperParamPayload.bool(value), "setParameter($param, $value)") } }
-    }
-
-    fun setParameter(
-        param: Int,
-        value: Float,
-    ) {
-        val fx = effect ?: return
-        val m = setParamMethod ?: return
-        with(fx) { with(m) { invokeParam(intToBytes(param), ViperParamPayload.float(value), "setParameter($param, $value)") } }
-    }
-
-    fun setParameter(
-        param: Int,
-        index: Int,
-        value: Int,
-    ) {
-        val fx = effect ?: return
-        val m = setParamMethod ?: return
-        with(fx) { with(m) { invokeParam(intToBytes(param), ViperParamPayload.int(value, index), "setParameter($param, $index, $value)") } }
-    }
-
-    fun setParameter(
-        param: Int,
-        index: Int,
-        value: Boolean,
-    ) {
-        val fx = effect ?: return
-        val m = setParamMethod ?: return
-        with(
-            fx,
-        ) { with(m) { invokeParam(intToBytes(param), ViperParamPayload.bool(value, index), "setParameter($param, $index, $value)") } }
-    }
-
-    fun setParameter(
-        param: Int,
-        index: Int,
-        value: Float,
-    ) {
-        val fx = effect ?: return
-        val m = setParamMethod ?: return
-        with(
-            fx,
-        ) { with(m) { invokeParam(intToBytes(param), ViperParamPayload.float(value, index), "setParameter($param, $index, $value)") } }
-    }
-
-    fun setParameter(
-        param: Int,
-        val1: Int,
-        val2: Int,
-        val3: Int,
-    ) {
-        val fx = effect ?: return
-        val m = setParamMethod ?: return
-        val valueBytes = ViperParamPayload.intArray(intArrayOf(val1, val2, val3))
-        with(fx) { with(m) { invokeParam(intToBytes(param), valueBytes, "setParameter($param, $val1, $val2, $val3)") } }
-    }
-
-    fun setParameter(
-        param: Int,
-        value: ByteArray,
-    ) {
-        val fx = effect ?: return
-        val m = setParamMethod ?: return
-        with(
-            fx,
-        ) { with(m) { invokeParam(intToBytes(param), ViperParamPayload.bytes(value), "setParameter($param, byteArray[${value.size}])") } }
-    }
-
-    fun setParameter(
-        param: Int,
-        value: FloatArray,
-    ) {
-        val fx = effect ?: return
-        val m = setParamMethod ?: return
-        with(fx) {
-            with(
-                m,
-            ) { invokeParam(intToBytes(param), ViperParamPayload.floatArray(value), "setParameter($param, floatArray[${value.size}])") }
-        }
-    }
-
     context(fx: AudioEffect, m: Method)
     private fun invokeParam(
         paramBytes: ByteArray,
         valueBytes: ByteArray,
         tag: String,
-    ) {
+    ): Boolean =
         try {
             val status = m.invoke(fx, paramBytes, valueBytes) as Int
             if (status != AudioEffect.SUCCESS) {
                 FileLogger.w("Effect", "$tag returned $status")
+                false
+            } else {
+                true
             }
         } catch (e: Exception) {
             FileLogger.e("Effect", "$tag invoke failed", e)
+            false
         }
-    }
 
-    fun getParameter(param: Int): Int {
-        val fx = effect ?: return -1
-        val m = getParamMethod ?: return -1
-        val paramBytes = intToBytes(param)
-        val valueBytes = ByteArray(4)
-        try {
-            val status = m.invoke(fx, paramBytes, valueBytes) as Int
-            if (status < 0) {
-                FileLogger.w("Effect", "getParameter($param) returned status $status")
-                return -1
-            }
-            return bytesToInt(valueBytes)
-        } catch (e: Exception) {
-            FileLogger.e("Effect", "getParameter($param) invoke failed", e)
-            return -1
-        }
+    fun setParameter(
+        param: Int,
+        value: ParamValue,
+    ): Boolean {
+        val fx = effect ?: return false
+        val m = setParamMethod ?: return false
+        return with(fx) { with(m) { invokeParam(intToBytes(param), ViperParamPayload.encode(value), "setParameter($param, $value)") } }
     }
 
     fun getParameter(
@@ -246,16 +143,38 @@ class ViperEffect(
         }
     }
 
-    fun getDriverVersionCode(): Int = getParameter(ViperParams.PARAM_GET_DRIVER_VERSION_CODE)
-
-    fun getArchitectureString(): String {
-        val bytes = getParameter(ViperParams.PARAM_GET_ARCHITECTURE, 64)
-        if (bytes.isEmpty()) return "Unknown"
-        val nullIdx = bytes.indexOf(0.toByte())
-        return if (nullIdx >= 0) String(bytes, 0, nullIdx) else String(bytes)
+    fun getIntParameter(param: Int): Int {
+        val bytes = getParameter(param, Int.SIZE_BYTES)
+        if (bytes.size != Int.SIZE_BYTES) return -1
+        return bytes.toLittleEndianInt()
     }
 
-    fun isStreaming(): Boolean = getParameter(ViperParams.PARAM_GET_STREAMING) == 1
+    fun getLongParameter(param: Int): Long {
+        val bytes = getParameter(param, Long.SIZE_BYTES)
+        if (bytes.size != Long.SIZE_BYTES) return 0L
+        return bytes.toLittleEndianLong()
+    }
+
+    fun getStringParameter(
+        param: Int,
+        size: Int,
+        fallback: String,
+    ): String {
+        val bytes = getParameter(param, size)
+        if (bytes.size != size) return ""
+        return bytes.toNullTerminatedString(fallback)
+    }
+
+    fun getStatus(): DriverStatus =
+        DriverStatus(
+            enabled = enabled,
+            sampleRate = getIntParameter(ViperParams.PARAM_GET_SAMPLING_RATE),
+            processedFrames = getLongParameter(ViperParams.PARAM_GET_PROCESSED_FRAMES),
+            kernelId = getIntParameter(ViperParams.PARAM_GET_CONVOLUTION_KERNEL_ID),
+            versionCode = getIntParameter(ViperParams.PARAM_GET_DRIVER_VERSION_CODE),
+            versionName = getStringParameter(ViperParams.PARAM_GET_DRIVER_VERSION_NAME, 256, "-"),
+            arch = getStringParameter(ViperParams.PARAM_GET_ARCHITECTURE, 64, "Unknow"),
+        )
 
     private fun intToBytes(value: Int): ByteArray =
         ByteBuffer
@@ -264,5 +183,13 @@ class ViperEffect(
             .putInt(value)
             .array()
 
-    private fun bytesToInt(bytes: ByteArray): Int = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN).int
+    private fun ByteArray.toLittleEndianInt(): Int = ByteBuffer.wrap(this).order(ByteOrder.LITTLE_ENDIAN).int
+
+    private fun ByteArray.toLittleEndianLong(): Long = ByteBuffer.wrap(this).order(ByteOrder.LITTLE_ENDIAN).long
+
+    private fun ByteArray.toNullTerminatedString(fallback: String): String {
+        if (isEmpty()) return fallback
+        val nullIdx = indexOf(0.toByte())
+        return if (nullIdx >= 0) String(this, 0, nullIdx) else String(this)
+    }
 }

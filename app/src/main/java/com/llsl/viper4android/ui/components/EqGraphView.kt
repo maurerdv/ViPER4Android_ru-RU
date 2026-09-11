@@ -49,7 +49,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import com.llsl.viper4android.R
 import com.llsl.viper4android.data.model.EqPreset
-import com.llsl.viper4android.viper.ViperDispatcher
+import com.llsl.viper4android.effect.BuiltinPresets
 import java.util.Locale
 import kotlin.math.max
 import kotlin.math.min
@@ -65,7 +65,7 @@ fun EqCurveGraph(
     modifier: Modifier = Modifier,
     bandCount: Int = 10,
 ) {
-    val freqLabels = ViperDispatcher.eqGraphLabelsForCount(bandCount)
+    val freqLabels = BuiltinPresets.eqGraphLabelsForCount(bandCount)
     val primary = MaterialTheme.colorScheme.primary
     val surfaceDark = MaterialTheme.colorScheme.surfaceContainerHighest
     val onSurfaceVariant = MaterialTheme.colorScheme.onSurfaceVariant
@@ -384,7 +384,7 @@ fun EqEditDialog(
 
                 Spacer(modifier = Modifier.height(UiDimens.Medium))
 
-                val bandLabels = ViperDispatcher.eqBandLabelsForCount(bandCount)
+                val bandLabels = BuiltinPresets.eqBandLabelsForCount(bandCount)
 
                 Column(
                     modifier = Modifier.heightIn(max = UiDimens.EqBandListMaxHeight).verticalScroll(rememberScrollState()),

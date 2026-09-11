@@ -90,4 +90,14 @@ object ViperParamPayload {
             .putInt(values.size)
             .also { buf -> values.forEach { buf.putInt(it) } }
             .array()
+
+    fun encode(value: ParamValue): ByteArray =
+        when (value) {
+            is ParamValue.Bool -> bool(value.v, value.index)
+            is ParamValue.IntV -> int(value.v, value.index)
+            is ParamValue.FloatV -> float(value.v, value.index)
+            is ParamValue.Ints -> intArray(value.v, value.index)
+            is ParamValue.Floats -> floatArray(value.v, value.index)
+            is ParamValue.Bytes -> bytes(value.v, value.index)
+        }
 }

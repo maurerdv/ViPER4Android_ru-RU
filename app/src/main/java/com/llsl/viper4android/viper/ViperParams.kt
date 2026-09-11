@@ -3,7 +3,7 @@ package com.llsl.viper4android.viper
 object ViperParams {
     const val PARAM_GET_ENABLED = 1
     const val PARAM_GET_CONFIGURE = 2
-    const val PARAM_GET_STREAMING = 3
+    const val PARAM_GET_PROCESSED_FRAMES = 3
     const val PARAM_GET_SAMPLING_RATE = 4
     const val PARAM_GET_CONVOLUTION_KERNEL_ID = 5
     const val PARAM_GET_DRIVER_VERSION_CODE = 6

@@ -39,9 +39,10 @@ import com.llsl.viper4android.effect.IntListPref
 import com.llsl.viper4android.effect.IntPref
 import com.llsl.viper4android.effect.ListPref
 import com.llsl.viper4android.effect.NullableLongPref
+import com.llsl.viper4android.effect.PRESET_SCHEMA_VERSION
 import com.llsl.viper4android.effect.StringPref
 import com.llsl.viper4android.effect.deserializeEffectPrefs
-import com.llsl.viper4android.effect.loadEffectPrefs
+import com.llsl.viper4android.effect.loadEffectStateFromPrefs
 import com.llsl.viper4android.effect.saveEffectPrefs
 import com.llsl.viper4android.effect.serializeEffectPrefs
 import com.llsl.viper4android.service.ViperService
@@ -49,9 +50,7 @@ import com.llsl.viper4android.utils.FileLogger
 import com.llsl.viper4android.utils.ReleaseInfo
 import com.llsl.viper4android.utils.UpdateChecker
 import com.llsl.viper4android.utils.UpdateResult
-import com.llsl.viper4android.viper.ViperControlClient
-import com.llsl.viper4android.viper.ViperEffect
-import com.llsl.viper4android.viper.ViperParams
+import com.llsl.viper4android.viper.ParamValue
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -184,7 +183,7 @@ class MainViewModel
             val initialDevice = audioOutputDetector.activeDevice.value
             viewModelScope.launch {
                 loadSettingsPreferences()
-                uiState.update { loadEffectPrefs(repository, it) }
+                uiState.update { loadEffectStateFromPrefs(repository, it) }
                 val dbName = repository.getDeviceSettings(initialDevice.id)?.deviceName ?: initialDevice.name
                 uiState.update { it.copy(activeDeviceName = dbName, activeDeviceId = initialDevice.id) }
                 loadEqPresetsForBandCount(uiState.value.eq.bandCount)
@@ -235,20 +234,20 @@ class MainViewModel
             if (pref.paramId != -1 && uiState.value.masterEnable && shouldDispatch(pref)) {
                 when (pref) {
                     is BoolPref -> {
-                        viperService?.dispatchParam(pref.paramId, value as Boolean)
+                        viperService?.setParam(pref.paramId, ParamValue.Bool(value as Boolean))
                     }
 
                     is IntPref -> {
-                        viperService?.dispatchParam(pref.paramId, value as Int)
+                        viperService?.setParam(pref.paramId, ParamValue.IntV(value as Int))
                     }
 
                     is FloatPref -> {
-                        viperService?.dispatchParam(pref.paramId, value as Float)
+                        viperService?.setParam(pref.paramId, ParamValue.FloatV(value as Float))
                     }
 
                     is DoubleListPref -> {
                         @Suppress("UNCHECKED_CAST")
-                        viperService?.dispatchParam(pref.paramId, pref.toFloatArray(value as List<Double>))
+                        viperService?.setParam(pref.paramId, ParamValue.Floats(pref.toFloatArray(value as List<Double>)))
                     }
 
                     else -> {}
@@ -285,9 +284,9 @@ class MainViewModel
             applyPref(pref, updated)
             ifMasterOn {
                 when (value) {
-                    is Boolean -> viperService?.dispatchParam(pref.paramId, band, value)
-                    is Int -> viperService?.dispatchParam(pref.paramId, band, value)
-                    is Float -> viperService?.dispatchParam(pref.paramId, band, value)
+                    is Boolean -> viperService?.setParam(pref.paramId, ParamValue.Bool(value, band))
+                    is Int -> viperService?.setParam(pref.paramId, ParamValue.IntV(value, band))
+                    is Float -> viperService?.setParam(pref.paramId, ParamValue.FloatV(value, band))
                 }
             }
         }
@@ -1227,6 +1226,9 @@ class MainViewModel
                             val importedCreatedAt =
                                 obj.optLong("createdAt", System.currentTimeMillis())
                             val effectOnlyJson = serializeEffectPrefs(parsed).toString()
+                            if (obj.optDouble("schemaVersion", 0.0) < PRESET_SCHEMA_VERSION) {
+                                tmpFile.writeText(effectOnlyJson)
+                            }
                             repository.savePreset(
                                 Preset(
                                     name = importedName,
@@ -1507,30 +1509,10 @@ class MainViewModel
             }
         }
 
-        fun queryDriverStatus() {
-            if (aidlModeEnabled.value) {
-                queryDriverStatusFromFile()
-                return
-            }
-            val active = viperService?.getActiveEffect()
-            if (active != null && active.isCreated) {
-                queryDriverStatusFrom(active)
-                return
-            }
-            val probe = ViperEffect(0, ViperEffect.EFFECT_TYPE_UUID)
-            if (!probe.create()) {
-                driverStatus.value = DriverStatus(installed = false)
-                probe.release()
-                return
-            }
-            queryDriverStatusFrom(probe)
-            probe.release()
-        }
-
         private var lastDriverFrames: Long = -1
 
-        private fun queryDriverStatusFromFile() {
-            val status = ViperControlClient.getStatus()
+        fun queryDriverStatus() {
+            val status = viperService?.probeDriverStatus()
             if (status == null || status.versionCode <= 0) {
                 if (driverStatus.value.installed) return
                 driverStatus.value = DriverStatus(installed = false)
@@ -1546,30 +1528,6 @@ class MainViewModel
                     architecture = status.arch,
                     streaming = streaming,
                     samplingRate = status.sampleRate,
-                )
-        }
-
-        private fun queryDriverStatusFrom(effect: ViperEffect) {
-            val versionCode = effect.getDriverVersionCode()
-            val archName = effect.getArchitectureString()
-            val streaming = effect.isStreaming()
-            val samplingRate = effect.getParameter(ViperParams.PARAM_GET_SAMPLING_RATE)
-            val versionBytes = effect.getParameter(ViperParams.PARAM_GET_DRIVER_VERSION_NAME, 256)
-            val versionName =
-                if (versionBytes.isNotEmpty()) {
-                    val nullIdx = versionBytes.indexOf(0.toByte())
-                    if (nullIdx >= 0) String(versionBytes, 0, nullIdx) else String(versionBytes)
-                } else {
-                    versionCode.toString()
-                }
-            driverStatus.value =
-                DriverStatus(
-                    installed = true,
-                    versionCode = versionCode,
-                    versionName = versionName,
-                    architecture = archName,
-                    streaming = streaming,
-                    samplingRate = samplingRate,
                 )
         }
 

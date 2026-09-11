@@ -4,8 +4,6 @@ import android.annotation.SuppressLint
 import android.os.IBinder
 import android.os.Parcel
 import com.llsl.viper4android.utils.FileLogger
-import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 @SuppressLint("PrivateApi")
 object ViperControlClient {
@@ -13,16 +11,6 @@ object ViperControlClient {
     private const val DESCRIPTOR = "viper.fx.IViperControl"
     private const val TRANSACTION_DISPATCH_PARAM = IBinder.FIRST_CALL_TRANSACTION + 0
     private const val TRANSACTION_GET_STATUS = IBinder.FIRST_CALL_TRANSACTION + 1
-
-    data class DriverStatus(
-        val enabled: Boolean,
-        val sampleRate: Int,
-        val processedFrames: Long,
-        val kernelId: Int,
-        val versionCode: Int,
-        val versionName: String,
-        val arch: String,
-    )
 
     private val getServiceMethod by lazy {
         try {
@@ -89,33 +77,6 @@ object ViperControlClient {
             data.recycle()
             reply.recycle()
         }
-    }
-
-    fun setDdc(
-        perRateFloats: Int,
-        coeffs: FloatArray,
-    ): Boolean {
-        require(coeffs.size == perRateFloats * 2) {
-            "setDdc: coeffs.size=${coeffs.size} expected ${perRateFloats * 2}"
-        }
-        val payload =
-            ByteBuffer
-                .allocate(8192)
-                .order(ByteOrder.LITTLE_ENDIAN)
-        payload.putInt(0)
-        payload.putInt(perRateFloats)
-        for (f in coeffs) payload.putFloat(f)
-        return dispatchParam(ViperParams.PARAM_DDC_COEFFICIENTS, payload.array())
-    }
-
-    fun resetDdc(): Boolean {
-        val payload =
-            ByteBuffer
-                .allocate(8192)
-                .order(ByteOrder.LITTLE_ENDIAN)
-        payload.putInt(0)
-        payload.putInt(0)
-        return dispatchParam(ViperParams.PARAM_DDC_COEFFICIENTS, payload.array())
     }
 
     private fun dispatchBytes(
