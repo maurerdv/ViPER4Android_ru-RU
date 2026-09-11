@@ -97,7 +97,7 @@
     <string name="label_dynamic_eq_target_gain">Целевое усиление</string>
     <string name="label_dynamic_eq_filter_type">Тип фильтра</string>
     <string name="dialog_delete_band">Удалить полосу</string>
-    <string name="dialog_delete_band_confirm"><Удалить полосу %1$s?</string>
+    <string name="dialog_delete_band_confirm">Удалить полосу %1$s?</string>
 
     <!-- Convolver -->
     <string name="section_convolver">Конвольвер</string>
