@@ -241,9 +241,9 @@
     <string name="settings_auto_start_desc">Запуск аудиослужбы V4A при загрузке устройства</string>
     <string name="settings_global_mode_desc">Применять эффекты глобально для всей системы</string>
     <string name="settings_excluded_apps_desc">Пропускать аудиосессии для выбранных приложений</string>
-    <string name="settings_import_preset_desc">Импортирование файла профиля в формате .json</string>
-    <string name="settings_import_kernel_desc">Импортирование файла импульсного отклика для конвольвера в формате .irs или .wav</string>
-    <string name="settings_import_vdc_desc">Импортирование файла профиля цифровой корекции(DDC) в формате .vdc</string>
+    <string name="settings_import_preset_desc">Импортирование файла профиля .json</string>
+    <string name="settings_import_kernel_desc">Импортирование файла импульсного отклика .irs или .wav</string>
+    <string name="settings_import_vdc_desc">Импортирование файла профиля цифровой корекции .vdc</string>
     <string name="settings_driver_version">Версия драйвера</string>
     <string name="settings_driver_arch">Архитектура драйвера</string>
     <string name="settings_app_version">Версия приложения</string>
