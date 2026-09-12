@@ -1,18 +1,27 @@
 package com.llsl.viper4android.ui.components
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material3.AlertDialog
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material3.Button
+import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -23,6 +32,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.window.Dialog
 import com.llsl.viper4android.R
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -142,11 +152,27 @@ fun NumberInputDialog(
             stringResource(R.string.dialog_value_range, fmt(min), fmt(max))
         }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(label) },
-        text = {
-            Column {
+    Dialog(onDismissRequest = onDismiss) {
+        Surface(
+            shape = RoundedCornerShape(UiDimens.DialogCornerRadius),
+            color = MaterialTheme.colorScheme.surfaceContainerHigh,
+            tonalElevation = UiDimens.Compact,
+        ) {
+            Column(modifier = Modifier.padding(UiDimens.IconLarge)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Close, contentDescription = null)
+                    }
+                }
                 OutlinedTextField(
                     value = text,
                     onValueChange = { text = it },
@@ -155,20 +181,35 @@ fun NumberInputDialog(
                     suffix = if (edit.unit.isNotEmpty()) ({ Text(edit.unit) }) else null,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
                     supportingText = { Text(rangeHint) },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier =
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(top = UiDimens.Standard, bottom = UiDimens.IconLarge),
                 )
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                ) {
+                    FilledTonalButton(
+                        onClick = onDismiss,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(android.R.string.cancel))
+                    }
+                    Spacer(modifier = Modifier.width(UiDimens.Medium))
+                    Button(
+                        onClick = {
+                            val clamped = parsed!!.coerceIn(min, max)
+                            edit.onCommit(clamped)
+                            onDismiss()
+                        },
+                        enabled = isValid,
+                        modifier = Modifier.weight(1f),
+                    ) {
+                        Text(stringResource(android.R.string.ok))
+                    }
+                }
             }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = {
-                    val clamped = parsed!!.coerceIn(min, max)
-                    edit.onCommit(clamped)
-                    onDismiss()
-                },
-                enabled = isValid,
-            ) { Text(stringResource(android.R.string.ok)) }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.action_cancel)) } },
-    )
+        }
+    }
 }
