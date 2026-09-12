@@ -112,7 +112,6 @@ fun LabeledDropdown(
                 deleteTarget = null
             },
             onDismiss = { deleteTarget = null },
-            dismissLabel = stringResource(R.string.action_cancel),
         )
     }
 }

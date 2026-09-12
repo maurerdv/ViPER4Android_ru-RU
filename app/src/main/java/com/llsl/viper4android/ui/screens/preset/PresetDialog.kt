@@ -74,12 +74,12 @@ fun PresetDialog(
             title = stringResource(R.string.preset_save_title),
             initialValue = "",
             confirmLabel = stringResource(R.string.action_save),
-            placeholder = stringResource(R.string.preset_name_hint),
             onConfirm = { name ->
                 onSave(name)
                 showSaveInput = false
             },
             onDismiss = { showSaveInput = false },
+            placeholder = stringResource(R.string.preset_name_hint),
         )
     }
 

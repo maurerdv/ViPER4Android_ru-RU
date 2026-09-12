@@ -466,7 +466,6 @@ fun EqEditDialog(
                 showSaveDialog = false
             },
             onDismiss = { showSaveDialog = false },
-            dismissLabel = stringResource(android.R.string.cancel),
             placeholder = stringResource(R.string.preset_name_hint),
         )
     }
