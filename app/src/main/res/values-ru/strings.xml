@@ -80,7 +80,7 @@
 
     <!-- DDC -->
     <string name="section_ddc">Цифровая коррекция</string>
-    <string name="label_ddc_device">Профиль цифровой коррекции(DDC)</string>
+    <string name="label_ddc_device">Профиль цифровой коррекции</string>
 
     <!-- Spectrum Extension -->
     <string name="section_spectrum_extension">Расширение спектра</string>
@@ -97,7 +97,7 @@
     <string name="label_dynamic_eq_target_gain">Целевое усиление</string>
     <string name="label_dynamic_eq_filter_type">Тип фильтра</string>
     <string name="dialog_delete_band">Удалить полосу</string>
-    <string name="dialog_delete_band_confirm"><Удалить полосу %1$s?</string>
+    <string name="dialog_delete_band_confirm">Удалить полосу %1$s?</string>
 
     <!-- Convolver -->
     <string name="section_convolver">Конвольвер</string>
@@ -210,7 +210,7 @@
     <string name="preset_update_confirm">Перезаписать «%1$s» текущими настройками? Это действие нельзя отменить.</string>
     <string name="preset_load_title">Загрузка профиля</string>
     <string name="preset_load_confirm">Загрузить «%1$s»? Текущие настройки будут заменены.</string>
-    <string name="preset_delete_title">Удаление профиля</string>
+    <string name="preset_delete_title">Удаление профиля(пресета)</string>
     <string name="preset_delete_confirm">Удалить «%1$s»? Это действие нельзя отменить.</string>
     <string name="preset_tap_for_details">Подробнее</string>
     <string name="preset_label_created">Создано</string>
@@ -241,9 +241,9 @@
     <string name="settings_auto_start_desc">Запуск аудиослужбы V4A при загрузке устройства</string>
     <string name="settings_global_mode_desc">Применять эффекты глобально для всей системы</string>
     <string name="settings_excluded_apps_desc">Пропускать аудиосессии для выбранных приложений</string>
-    <string name="settings_import_preset_desc">Импортирование файла профиля в формате .json</string>
-    <string name="settings_import_kernel_desc">Импортирование файла импульсного отклика для конвольвера в формате .irs или .wav</string>
-    <string name="settings_import_vdc_desc">Импортирование файла профиля цифровой корекции(DDC) в формате .vdc</string>
+    <string name="settings_import_preset_desc">Импортирование файла профиля .json</string>
+    <string name="settings_import_kernel_desc">Импортирование файла импульсного отклика .irs или .wav</string>
+    <string name="settings_import_vdc_desc">Импортирование файла профиля цифровой корекции .vdc</string>
     <string name="settings_driver_version">Версия драйвера</string>
     <string name="settings_driver_arch">Архитектура драйвера</string>
     <string name="settings_app_version">Версия приложения</string>
