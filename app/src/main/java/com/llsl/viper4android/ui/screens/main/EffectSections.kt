@@ -1273,7 +1273,6 @@ fun DynamicEqSection(
                 if (selectedTab >= bandCount - 1) selectedTab = maxOf(0, bandCount - 2)
             },
             onDismiss = { deleteBandIndex = -1 },
-            dismissLabel = stringResource(R.string.action_cancel),
         )
     }
 
@@ -2091,7 +2090,6 @@ fun DynamicSystemSection(
                 showSaveDialog = false
             },
             onDismiss = { showSaveDialog = false },
-            dismissLabel = stringResource(android.R.string.cancel),
             placeholder = stringResource(R.string.preset_name_hint),
         )
     }
