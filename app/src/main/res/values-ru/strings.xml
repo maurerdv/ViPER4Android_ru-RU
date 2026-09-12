@@ -213,7 +213,7 @@
     <string name="preset_delete_title">Удаление профиля(пресета)</string>
     <string name="preset_delete_confirm">Удалить «%1$s»? Это действие нельзя отменить.</string>
     <string name="preset_tap_for_details">Подробнее</string>
-    <string name="preset_label_created">Создано</string>
+    <string name="preset_label_created">Создан</string>
     <string name="preset_label_updated">Последнее обновление</string>
 
     <!-- Driver Status -->
