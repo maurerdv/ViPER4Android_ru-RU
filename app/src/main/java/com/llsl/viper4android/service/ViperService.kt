@@ -142,13 +142,8 @@ class ViperService : LifecycleService() {
         FileLogger.i("Service", "Service created")
         lifecycleScope.launch {
             ensureConfigLoaded()
-            repository.getStringSetPreference(ViperRepository.PREF_EXCLUDED_APPS).collect { excludedApps = it }
-        }
-        lifecycleScope.launch {
-            ensureConfigLoaded()
-            if (masterEnabled) {
-                val state = loadEffectStateFromPrefs(repository)
-                applyState(state, true)
+            launch {
+                repository.getStringSetPreference(ViperRepository.PREF_EXCLUDED_APPS).collect { excludedApps = it }
             }
             startAudioOutputMonitor()
         }
@@ -200,21 +195,21 @@ class ViperService : LifecycleService() {
             effectRegistry.releaseGlobal()
             return
         }
+        val newGlobalEffect = globalMode && effectRegistry.globalEffect() == null
         if (globalMode) {
-            if (effectRegistry.globalEffect() == null) initGlobalEffect()
+            if (newGlobalEffect) initGlobalEffect()
         } else {
             if (sessionMonitor == null) startSessionMonitor()
         }
         effectRegistry.liveEffects().forEach { it.enabled = true }
-        transport.pushFullState(state)
+        transport.pushFullState(state, forceBulk = newGlobalEffect)
     }
 
-    private var currentServiceDeviceId: String = AudioDevice.ID_SPEAKER
+    private var currentServiceDeviceId: String = ""
 
     private fun startAudioOutputMonitor() {
         val detector = AudioOutputDetector(this)
         audioOutputDetector = detector
-        currentServiceDeviceId = detector.activeDevice.value.id
         lifecycleScope.launch {
             detector.activeDevice.collect { device ->
                 if (device.id != currentServiceDeviceId) {
@@ -223,6 +218,7 @@ class ViperService : LifecycleService() {
                         "Device changed: $currentServiceDeviceId -> ${device.id} (${device.name})",
                     )
                     currentServiceDeviceId = device.id
+                    lastUiState = null
                     reapplyForDevice(device)
                 }
             }
@@ -253,14 +249,26 @@ class ViperService : LifecycleService() {
                 )
                 s
             }
+        lastUiState = state
         applyState(state, masterEnabled)
+    }
+
+    private suspend fun currentDeviceState(): EffectState {
+        stateProvider?.invoke()?.let { state ->
+            if (state.activeDeviceId == currentServiceDeviceId) return state
+        }
+        lastUiState?.let { return it }
+        val device = audioOutputDetector?.activeDevice?.value ?: AudioDevice.DEFAULT_SPEAKER
+        val baseState = loadEffectStateFromPrefs(repository)
+        val saved = repository.getDeviceSettings(device.id) ?: return baseState
+        return deserializeEffectPrefs(JSONObject(saved.settingsJson), baseState)
     }
 
     private suspend fun dispatchFullStateToEffect() {
         if (!masterEnabled) return
-        val state = loadEffectStateFromPrefs(repository)
+        val state = currentDeviceState()
         lastUiState = state
-        transport.pushFullState(state)
+        transport.pushFullState(state, forceBulk = true)
     }
 
     override fun onStartCommand(
@@ -287,7 +295,7 @@ class ViperService : LifecycleService() {
                 lifecycleScope.launch {
                     ensureConfigLoaded()
                     bootMasterEnabled = next
-                    val state = loadEffectStateFromPrefs(repository)
+                    val state = currentDeviceState()
                     stateProvider = null
                     lastUiState = state
                     applyState(state, next)
@@ -376,6 +384,7 @@ class ViperService : LifecycleService() {
     ) = transport.set(param, value)
 
     fun dispatchFullState(state: EffectState) {
+        lastUiState = state
         applyState(state, masterEnabled)
     }
 
@@ -539,7 +548,7 @@ class ViperService : LifecycleService() {
             effectRegistry.releaseGlobal()
         }
         lifecycleScope.launch {
-            applyState(loadEffectStateFromPrefs(repository), true)
+            applyState(currentDeviceState(), true)
         }
     }
 
